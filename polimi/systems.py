@@ -14,11 +14,6 @@ def jacobian_finite_differences(fun,t,y):
     return J
 
 def vdp(t,y,epsilon,A,T):
-#    F = 1./T
-#    return np.array([
-#        y[1],
-#        epsilon*(1-y[0]**2)*y[1] - y[0] + A*np.cos(2*np.pi*F*t)
-#    ])
     F = [1./tt for tt in T]
     ydot = np.array([
         y[1],
@@ -35,13 +30,9 @@ def vdp_jac(t,y,epsilon):
         [-2*epsilon*y[0]*y[1]-1,epsilon*(1-y[0]**2)]
     ])
 
-def y0min(t,y):
-    return y[0]
-y0min.direction = 1
-
-def y1min(t,y):
-    return y[1]
-y1min.direction = 1
+def vdp_extrema(t,y,epsilon,A,T,coord):
+    ydot = vdp(t,y,epsilon,A,T)
+    return ydot[coord]
 
 def colpitts(t,y,Q,g,k,Q0,alpha):
     n = lambda x: np.exp(-x)-1.

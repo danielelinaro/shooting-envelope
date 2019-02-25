@@ -203,7 +203,7 @@ class BDFEnvelope(OdeSolver):
         f = self._envelope_fun(t0,y0,T_guess)
         self.h_abs = self.T
         self.T_prev = self.T
-        #print('The period is estimated at {} sec.'.format(self.T))
+        print('The period is estimated at %.10f sec.' % self.T)
         #####
         self.h_abs_old = None
         self.error_norm_old = None
@@ -400,7 +400,7 @@ class BDFEnvelope(OdeSolver):
 
             h = h_abs * self.direction
             t_new = t + h
-            #print('_step_impl> t_new =', t_new)
+            print('_step_impl> t_new = %.6f (T=%.6f)' % (t_new,self.T))
 
             if self.direction * (t_new - self.t_bound) > 0:
                 t_new = self.t_bound
@@ -463,7 +463,7 @@ class BDFEnvelope(OdeSolver):
                 step_accepted = True
 
             if not step_accepted:
-                print('_step_impl> inside main loop: step NOT accepted.')
+                print('_step_impl> inside main loop: step NOT accepted. Reducing step from %f to %f.' % (h_abs_prev,h_abs))
 
         self.n_equal_steps += 1
 
