@@ -192,7 +192,8 @@ class RungeKuttaEnvelope(OdeSolver):
             t_new = t + h
 
             if self.direction * (t_new - self.t_bound) > 0:
-                t_new = self.t_bound
+                # find the value of t_new closest to t_bound such that (t_new-t)/self.T is an integer
+                t_new = t + np.round((self.t_bound - t) / self.T) * self.T
 
             h = t_new - t
             h_abs = np.abs(h)

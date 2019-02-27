@@ -26,9 +26,9 @@ def autonomous_vdp():
     tend = 10000
     print('Integrating the full system...')
     if method == 'BDF':
-        full = solve_ivp(fun, [0,tend], y0, method, jac=jac, atol=atol['fun'], rtol=rtol['fun'])
+        full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, jac=jac, atol=atol['fun'], rtol=rtol['fun'])
     else:
-        full = solve_ivp(fun, [0,tend], y0, method, atol=atol['fun'], rtol=rtol['fun'])
+        full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, atol=atol['fun'], rtol=rtol['fun'])
 
     env_fun_1 = lambda t,y: _envelope_system(t, y, fun, T_exact, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
     print('Integrating the first envelope function...')
@@ -100,7 +100,7 @@ def forced_vdp():
     print('y0 =',y0)
 
     print('Integrating the full system...')
-    tend = 7000
+    tend = 5000
     if method == 'BDF':
         full = solve_ivp(fun, [t0,tend], y0, method='BDF', jac=jac, atol=atol['fun'],
                          rtol=rtol['fun'], events=event_fun, dense_output=True)
@@ -122,7 +122,7 @@ def forced_vdp():
 
     print('Integrating the envelope with BDF...')
     bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'],
+                    rtol=rtol['env'], atol=atol['env'], dTtol=0.1,
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     plt.figure()

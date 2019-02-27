@@ -43,6 +43,7 @@ def solve_bdf_system(fun, t_new, y_predict, c, psi, LU, solve_lu, scale, tol):
     converged = False
     for k in range(NEWTON_MAXITER):
         f = fun(t_new, y)
+
         if not np.all(np.isfinite(f)):
             break
 
@@ -184,15 +185,16 @@ class BDFEnvelope(OdeSolver):
            and its Applications, 13, pp. 117-120, 1974.
     """
     def __init__(self, fun, t0, y0, t_bound, T_guess, max_step=np.inf,
-                 rtol=1e-3, atol=1e-6, fun_rtol=1e-6, fun_atol=1e-8,
+                 rtol=1e-3, atol=1e-6, fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
                  **extraneous):
         warn_extraneous(extraneous)
         super(BDFEnvelope, self).__init__(lambda t,y: self._envelope_fun(t,y,None),
                                           t0, y0, t_bound, vectorized=False,
-                                          support_complex=True)
+                                          support_complex=False)
         self.max_step = validate_max_step(max_step)
         self.rtol, self.atol = validate_tol(rtol, atol, self.n)
+        self.dTtol = dTtol
         #####
         self.original_fun_rtol, self.original_fun_atol = validate_tol(fun_rtol, fun_atol, self.n)
         self.original_fun = fun
@@ -201,8 +203,8 @@ class BDFEnvelope(OdeSolver):
         self.original_fun_vectorized = vectorized
         self.original_fun_method = fun_method
         f = self._envelope_fun(t0,y0,T_guess)
+        self.T = self.T_new
         self.h_abs = self.T
-        self.T_prev = self.T
         print('The period is estimated at %.10f sec.' % self.T)
         #####
         self.h_abs_old = None
@@ -247,7 +249,6 @@ class BDFEnvelope(OdeSolver):
         D[0] = self.y
         D[1] = f * self.h_abs * self.direction
         self.D = D
-
         self.order = 1
         self.n_equal_steps = 0
         self.LU = None
@@ -347,7 +348,8 @@ class BDFEnvelope(OdeSolver):
             if np.dot(w,f/np.linalg.norm(f))+b > 0:
                 T = t_ev-t
                 break
-        self.T = T
+        self.T_new = T
+        #print('_envelope_fun> t = %.8f T_guess = %.8f T_new = %.8f' % (t,T_guess,self.T_new))
         # return the "vector field" of the envelope
         return 1./T * (sol_b['sol'](t+T) - sol_a['sol'](t))
 
@@ -367,6 +369,7 @@ class BDFEnvelope(OdeSolver):
             change_D(D, self.order, h_abs / self.h_abs)
             self.n_equal_steps = 0
         elif self.h_abs < min_step:
+            ipdb.set_trace()
             h_abs = self._round_step(min_step)
             change_D(D, self.order, h_abs / self.h_abs)
             self.n_equal_steps = 0
@@ -387,11 +390,6 @@ class BDFEnvelope(OdeSolver):
         current_jac = self.jac is None
 
         step_accepted = False
-        ###
-        if self.direction != -1 and self.direction != 1:
-            print('_step_impl> direction != (-)1')
-            ipdb.set_trace()
-        ###
         while not step_accepted:
             if h_abs < min_step:
                 print('_step_impl> step too small.')
@@ -399,11 +397,15 @@ class BDFEnvelope(OdeSolver):
                 return False, self.TOO_SMALL_STEP
 
             h = h_abs * self.direction
-            t_new = t + h
-            print('_step_impl> t_new = %.6f (T=%.6f)' % (t_new,self.T))
+            t_new = t + h  # the time at which we want to compute the solution
+            #print('_step_impl> t_new = %.6f (T=%.6f)' % (t_new,self.T))
 
+            # if t_new is beyond the final integration time, stop earlier
             if self.direction * (t_new - self.t_bound) > 0:
-                t_new = self.t_bound
+                # find the value of t_new closest to t_bound such that (t_new-t)/self.T is an integer
+                t_new = t + np.round((self.t_bound - t) / self.T) * self.T
+                if t_new == t:
+                    t_new += self.T
                 change_D(D, order, np.abs(t_new - t) / h_abs)
                 self.n_equal_steps = 0
                 LU = None
@@ -411,6 +413,7 @@ class BDFEnvelope(OdeSolver):
             h = t_new - t
             h_abs = np.abs(h)
 
+            # predicted value of the solution
             y_predict = np.sum(D[:order + 1], axis=0)
 
             scale = atol + rtol * np.abs(y_predict)
@@ -422,10 +425,13 @@ class BDFEnvelope(OdeSolver):
                 if LU is None:
                     LU = self.lu(self.I - c * J)
 
+                # make the correction step
                 converged, n_iter, y_new, d = solve_bdf_system(
                     self.fun, t_new, y_predict, c, psi, LU, self.solve_lu,
                     scale, self.newton_tol)
-                min_step = self.T
+
+                # compute the change in period at t_new
+                dT = np.abs(self.T_new - self.T) / self.T
                 
                 if not converged:
                     if current_jac:
@@ -441,6 +447,22 @@ class BDFEnvelope(OdeSolver):
                 change_D(D, order, h_abs / h_abs_prev)
                 self.n_equal_steps = 0
                 LU = None
+                print('_step_impl> correction step did not converge (dT = %f): decreasing H: %f -> %f.'
+                      % (dT,h_abs_prev,h_abs))
+                continue
+
+            if dT > self.dTtol:
+                factor = 0.5
+                h_abs_prev = h_abs
+                h_abs = self._round_step(h_abs*factor)
+                if h_abs == h_abs_prev:
+                    print('_step_impl> cannot reduce step any further...')
+                    ipdb.set_trace()
+                change_D(D, order, h_abs / h_abs_prev)
+                self.n_equal_steps = 0
+                LU = None
+                print('_step_impl> new period estimation is too different from current (%f): decreasing H: %f -> %f.'
+                          % (dT,h_abs_prev,h_abs))
                 continue
 
             safety = 0.9 * (2 * NEWTON_MAXITER + 1) / (2 * NEWTON_MAXITER
@@ -460,10 +482,14 @@ class BDFEnvelope(OdeSolver):
                 # As we didn't have problems with convergence, we don't
                 # reset LU here.
             else:
+                #print('_step_impl> difference between new and current periods is within tolerance limits (%f).' % dT)
+                self.T_prev = self.T
+                self.T = self.T_new
                 step_accepted = True
 
             if not step_accepted:
-                print('_step_impl> inside main loop: step NOT accepted. Reducing step from %f to %f.' % (h_abs_prev,h_abs))
+                print('_step_impl> inside main loop: step NOT accepted (dT = %f, error_norm = %f). Reducing step from %f to %f.'
+                      % (dT,h_abs_prev,h_abs,error_norm))
 
         self.n_equal_steps += 1
 
