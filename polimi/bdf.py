@@ -349,12 +349,22 @@ class BDFEnvelope(OdeSolver):
                 T = t_ev-t
                 break
         self.T_new = T
+        self.y_new = sol_b['sol'](t+T)
         #print('_envelope_fun> t = %.8f T_guess = %.8f T_new = %.8f' % (t,T_guess,self.T_new))
         # return the "vector field" of the envelope
-        return 1./T * (sol_b['sol'](t+T) - sol_a['sol'](t))
+        return 1./T * (self.y_new - sol_a['sol'](t))
 
-    def _round_step(self, h):
-        return self.T * np.max((1,np.floor(h/self.T)))
+    def _round_step(self, h, h_prev=None):
+        h_new_round = self.T * np.max((1,np.round(h/self.T)))
+        h_new_floor = self.T * np.max((1,np.floor(h/self.T)))
+        if h_prev is None:
+            print('_round_step> T=%.15f h=%.15f rounded=%.15f floored=%.15f' %
+                  (self.T, h, h_new_round, h_new_floor))
+        else:
+            print('_round_step> T=%.15f h_prev=%.15f h=%.15f rounded=%.15f floored=%.15f' %
+                  (self.T, h_prev, h, h_new_round, h_new_floor))
+        #return self.T * np.max((1,np.floor(h/self.T)))
+        return self.T * np.max((1,np.round(h/self.T)))
     
     def _step_impl(self):
         t = self.t
@@ -362,19 +372,19 @@ class BDFEnvelope(OdeSolver):
 
         max_step = self.max_step
         min_step = 10 * np.abs(np.nextafter(t, self.direction * np.inf) - t)
-        #max_step = 1000000 * self.T
-        #min_step = 1 * self.T
+        
         if self.h_abs > max_step:
-            h_abs = self._round_step(max_step)
+            h_abs = self._round_step(max_step, self.h_abs)
             change_D(D, self.order, h_abs / self.h_abs)
             self.n_equal_steps = 0
         elif self.h_abs < min_step:
             ipdb.set_trace()
-            h_abs = self._round_step(min_step)
+            h_abs = self._round_step(min_step, self.h_abs)
             change_D(D, self.order, h_abs / self.h_abs)
             self.n_equal_steps = 0
         else:
-            h_abs = self._round_step(self.h_abs)
+            ### this is necessary, we can't just use h_abs = self.h_abs
+            h_abs = self._round_step(self.h_abs, self.h_abs)
             change_D(D, self.order, h_abs / self.h_abs)
 
         atol = self.atol
@@ -443,21 +453,22 @@ class BDFEnvelope(OdeSolver):
             if not converged:
                 factor = 0.5
                 h_abs_prev = h_abs
-                h_abs = self._round_step(h_abs*factor)
+                h_abs = self._round_step(h_abs*factor, h_abs_prev)
                 change_D(D, order, h_abs / h_abs_prev)
                 self.n_equal_steps = 0
                 LU = None
                 print('_step_impl> correction step did not converge (dT = %f): decreasing H: %f -> %f.'
                       % (dT,h_abs_prev,h_abs))
+                #ipdb.set_trace()
                 continue
 
             if dT > self.dTtol:
                 factor = 0.5
                 h_abs_prev = h_abs
-                h_abs = self._round_step(h_abs*factor)
+                h_abs = self._round_step(h_abs*factor, h_abs_prev)
                 if h_abs == h_abs_prev:
                     print('_step_impl> cannot reduce step any further...')
-                    ipdb.set_trace()
+                    #ipdb.set_trace()
                 change_D(D, order, h_abs / h_abs_prev)
                 self.n_equal_steps = 0
                 LU = None
@@ -476,7 +487,7 @@ class BDFEnvelope(OdeSolver):
                 factor = max(MIN_FACTOR,
                              safety * error_norm ** (-1 / (order + 1)))
                 h_abs_prev = h_abs
-                h_abs = self._round_step(h_abs*factor)
+                h_abs = self._round_step(h_abs*factor, h_abs_prev)
                 change_D(D, order, h_abs / h_abs_prev)
                 self.n_equal_steps = 0
                 # As we didn't have problems with convergence, we don't
@@ -489,7 +500,7 @@ class BDFEnvelope(OdeSolver):
 
             if not step_accepted:
                 print('_step_impl> inside main loop: step NOT accepted (dT = %f, error_norm = %f). Reducing step from %f to %f.'
-                      % (dT,h_abs_prev,h_abs,error_norm))
+                      % (dT,error_norm,h_abs_prev,h_abs))
 
         self.n_equal_steps += 1
 
@@ -533,10 +544,14 @@ class BDFEnvelope(OdeSolver):
 
         factor = min(MAX_FACTOR, safety * np.max(factors))
         h_abs_prev = self.h_abs
-        self.h_abs = self._round_step(self.h_abs*factor)
+        self.h_abs = self._round_step(self.h_abs*factor, h_abs_prev)
         change_D(D, order, self.h_abs / h_abs_prev)
         self.n_equal_steps = 0
         self.LU = None
+        #if self.h_abs > h_abs_prev:
+        #    print('_step_impl> increasing h_abs (%f -> %f).' % (h_abs_prev,self.h_abs))
+        #else:
+        #    print('_step_impl> reducing h_abs (%f -> %f).' % (h_abs_prev,self.h_abs))
 
         return True, None
 
