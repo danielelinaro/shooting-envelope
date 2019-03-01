@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from polimi.systems import vdp, vdp_jac, vdp_extrema
-from polimi.envelope import RK45Envelope, BDFEnvelope, _envelope_system, _one_period
+from polimi.envelope import RK45Envelope, BDFEnvelope, BDFEnv, _envelope_system, _one_period
 import sys
 import os
 
@@ -23,7 +23,7 @@ def autonomous_vdp():
     jac = lambda t,y: vdp_jac(t,y,epsilon)
 
     method = 'RK45'
-    tend = 30000
+    tend = 10000
     print('Integrating the full system...')
     if method == 'BDF':
         full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, jac=jac, atol=atol['fun'], rtol=rtol['fun'])
@@ -44,7 +44,7 @@ def autonomous_vdp():
                    fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     print('Integrating the envelope with BDF...')
-    bdf = solve_ivp(fun, [0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
+    bdf = solve_ivp(fun, [0,tend], y0, method=BDFEnv, T_guess=T_guess,
                     rtol=rtol['env'], atol=atol['env'],
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
     
@@ -83,7 +83,7 @@ def forced_vdp():
     method = 'RK45'
 
     t0 = 0
-    ttran = 500
+    ttran = 2000
     if ttran > 0:
         print('Integrating the full system (transient)...')
         if method == 'BDF':
@@ -100,7 +100,7 @@ def forced_vdp():
     print('y0 =',y0)
 
     print('Integrating the full system...')
-    tend = 2000
+    tend = 3000
     if method == 'BDF':
         full = solve_ivp(fun, [t0,tend], y0, method='BDF', jac=jac, atol=atol['fun'],
                          rtol=rtol['fun'], events=event_fun, dense_output=True)
