@@ -23,7 +23,7 @@ def autonomous_vdp():
     jac = lambda t,y: vdp_jac(t,y,epsilon)
 
     method = 'RK45'
-    tend = 10000
+    tend = 20000
     print('Integrating the full system...')
     if method == 'BDF':
         full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, jac=jac, atol=atol['fun'], rtol=rtol['fun'])
@@ -83,6 +83,7 @@ def forced_vdp():
     method = 'RK45'
 
     t0 = 0
+    #ttran = 2230.0052265508943
     ttran = 2000
     if ttran > 0:
         print('Integrating the full system (transient)...')
@@ -98,6 +99,10 @@ def forced_vdp():
     
     print('t0 =',t0)
     print('y0 =',y0)
+
+    t0_env = 2230.0052265508943
+    y0_env = np.array([8.25882387, 0.02116662])
+    T_env = [9.990847895360275,10.006836427150574]
 
     print('Integrating the full system...')
     tend = 3000
@@ -121,30 +126,40 @@ def forced_vdp():
     #               fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     print('Integrating the envelope with BDF...')
-    bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'], dTtol=0.1,
+    bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnv, T_guess=T_guess,
+                    rtol=rtol['env'], atol=atol['env'], dTtol=1e-3,
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     plt.figure()
-    plt.plot(full['t'],full['y'][0],'k',label='Full integration (%s)'%method)
-    if method == 'BDF':
-        plt.plot(full['t_events'][0],full['sol'](full['t_events'][0])[0],'gx')
-    plt.plot(var_step_1['t'],var_step_1['y'][0],'go-',lw=2,label='Var. step (fixed T)')
-    for t0,y0 in zip(var_step_1['t'],var_step_1['y'].transpose()):
-        sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        plt.plot(sol['t'],sol['y'][0],'g')
-    #plt.plot(var_step_2['t'],var_step_2['y'][0],'ms-',lw=2,label='Var. step (estimated T)')
-    #plt.plot(rk['t'],rk['y'][0],'r^-',lw=2,label='RK45')
-    #for t0,y0 in zip(rk['t'],rk['y'].transpose()):
-    #    sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-    #    plt.plot(sol['t'],sol['y'][0],'r')
-    plt.plot(bdf['t'],bdf['y'][0],'cv-',lw=2,label='BDF')
-    for t0,y0 in zip(bdf['t'],bdf['y'].transpose()):
-        sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        plt.plot(sol['t'],sol['y'][0],'c')
-    plt.xlabel('Time (s)')
-    plt.ylabel('x')
-    plt.legend(loc='best')
+    for i in range(2):
+        if i == 0:
+            ax = plt.subplot(2,1,i+1)
+        else:
+            plt.subplot(2,1,i+1,sharex=ax)
+        plt.plot(full['t'],full['y'][i],'k',label='Full integration (%s)'%method)
+        if method == 'BDF':
+            plt.plot(full['t_events'][0],full['sol'](full['t_events'][0])[i],'gx')
+        plt.plot(var_step_1['t'],var_step_1['y'][i],'go-',lw=2,label='Var. step (fixed T)')
+        #for t0,y0 in zip(var_step_1['t'],var_step_1['y'].transpose()):
+        #    sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
+        #    plt.plot(sol['t'],sol['y'][i],'g')
+        #plt.plot(var_step_2['t'],var_step_2['y'][i],'ms-',lw=2,label='Var. step (estimated T)')
+        #plt.plot(rk['t'],rk['y'][0],'r^-',lw=2,label='RK45')
+        #for t0,y0 in zip(rk['t'],rk['y'].transpose()):
+        #    sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
+        #    plt.plot(sol['t'],sol['y'][i],'r')
+        plt.plot(bdf['t'],bdf['y'][i],'cv-',lw=2,label='BDF')
+        for t0,y0 in zip(bdf['t'],bdf['y'].transpose()):
+            sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
+            plt.plot(sol['t'],sol['y'][i],'c')
+        #sol = solve_ivp(fun, [t0_env,t0_env+T_env[0]], y0_env, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
+        #plt.plot(sol['t'],sol['y'][i],'m')
+        if i == 1:
+            plt.xlabel('Time (s)')
+            plt.ylabel('y')
+            plt.legend(loc='best')
+        else:
+            plt.ylabel('x')
     plt.show()
 
 
