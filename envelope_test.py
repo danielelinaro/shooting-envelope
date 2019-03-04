@@ -23,7 +23,7 @@ def autonomous_vdp():
     jac = lambda t,y: vdp_jac(t,y,epsilon)
 
     method = 'RK45'
-    tend = 20000
+    tend = 10000
     print('Integrating the full system...')
     if method == 'BDF':
         full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, jac=jac, atol=atol['fun'], rtol=rtol['fun'])
@@ -105,7 +105,7 @@ def forced_vdp():
     T_env = [9.990847895360275,10.006836427150574]
 
     print('Integrating the full system...')
-    tend = 3000
+    tend = 6000
     if method == 'BDF':
         full = solve_ivp(fun, [t0,tend], y0, method='BDF', jac=jac, atol=atol['fun'],
                          rtol=rtol['fun'], events=event_fun, dense_output=True)
@@ -127,7 +127,7 @@ def forced_vdp():
 
     print('Integrating the envelope with BDF...')
     bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnv, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'], dTtol=1e-3,
+                    rtol=rtol['env'], atol=atol['env'], dTtol=1e-2,
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     plt.figure()

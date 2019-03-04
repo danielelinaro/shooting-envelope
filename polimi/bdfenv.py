@@ -497,7 +497,8 @@ class BDFEnv(OdeSolver):
 
     def _step_impl(self):
         success,message = self.solver._step_impl()
-        if success:
+        dT = np.abs(self.T - self.T_new)
+        if success and dT < self.dTtol:
             self.T = self.T_new
             self.solver.min_step = self.T
             self.status = self.solver.status
@@ -510,6 +511,8 @@ class BDFEnv(OdeSolver):
             self.njev = self.solver.njev
             self.nlu = self.solver.nlu
             return success,message
+        print('_step_impl(%.3f)> dT = %e' % (self.t,dT))
+        #ipdb.set_trace()
         #print('t =',self.t)
         #print('y =',self.y)
         #import polimi.systems as psys
@@ -532,7 +535,6 @@ class BDFEnv(OdeSolver):
                                       self.max_step, self.rtol, self.atol,
                                       jac=None, jac_sparsity=None,
                                       vectorized=False, first_step=self.T)
-        #ipdb.set_trace()
         return True,None
         
     def _envelope_fun(self,t,y,T_guess=None):
