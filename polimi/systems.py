@@ -34,6 +34,30 @@ def vdp_extrema(t,y,epsilon,A,T,coord):
     ydot = vdp(t,y,epsilon,A,T)
     return ydot[coord]
 
+#def polar(t,y,k,rho,L,T):
+#    root = np.square(y[0]**2 + y[1]**2)
+#    return np.array([
+#        k * (rho*L*y[0]/root - L*y[0]) - 2*np.pi*y[1]/T,
+#        k * (rho*L*y[1]/root - L*y[1]) - 2*np.pi*y[0]/T
+#        ])
+
+def vdp_auto(t,y,epsilon,A,T):
+    sum_of_squares = y[2]**2 + y[3]**2
+    rho = 1
+    ydot = np.zeros(4)
+    ydot[0] = y[1]
+    ydot[1] = epsilon*(1-y[0]**2)*y[1] - y[0] + A*y[2]
+    ydot[3] = 2*np.pi/T*y[2] + y[3]*((rho-sum_of_squares)/(2*sum_of_squares))
+    ydot[2] = (rho - sum_of_squares - 2*y[3]*ydot[3]) / (2*y[2])
+    return ydot
+
+def polar(t,y,rho,T):
+    sum_of_squares = y[0]**2 + y[1]**2
+    ydot = np.zeros(2)
+    ydot[1] = 2*np.pi/T*y[0] + y[1]*((rho-sum_of_squares)/(2*sum_of_squares))
+    ydot[0] = (rho - sum_of_squares - 2*y[1]*ydot[1]) / (2*y[0])
+    return ydot
+
 def colpitts(t,y,Q,g,k,Q0,alpha):
     n = lambda x: np.exp(-x)-1.
     #return np.array([
