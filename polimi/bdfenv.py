@@ -54,8 +54,8 @@ def solve_bdf_system(fun, t_new, y_predict, c, psi, LU, solve_lu, scale, tol):
         else:
             rate = dy_norm / dy_norm_old
 
-        if (rate is not None and (rate >= 1 or
-                rate ** (NEWTON_MAXITER - k) / (1 - rate) * dy_norm > tol)):
+        # we allow rate to be >= 1, unlike the original solver
+        if (rate is not None and rate ** (NEWTON_MAXITER - k) / (1 - rate) * dy_norm > tol):
             break
 
         y += dy
