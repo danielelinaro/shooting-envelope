@@ -3,7 +3,6 @@ from scipy.integrate import solve_ivp
 
 from .rk import RK23Envelope, RK45Envelope
 from .bdf import BDFEnvelope
-from .bdfenv import BDFEnv
 
 #############################################################################
 ############################## HELPER FUNCTIONS #############################

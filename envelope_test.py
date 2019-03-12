@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from polimi.systems import vdp, vdp_jac, vdp_extrema, vdp_auto
-from polimi.envelope import RK45Envelope, BDFEnvelope, BDFEnv, _envelope_system, _one_period
+from polimi.envelope import RK45Envelope, BDFEnvelope, _envelope_system, _one_period
 import sys
 import os
 
@@ -44,7 +44,7 @@ def autonomous_vdp():
                    fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     print('Integrating the envelope with BDF...')
-    bdf = solve_ivp(fun, [0,tend], y0, method=BDFEnv, T_guess=T_guess,
+    bdf = solve_ivp(fun, [0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
                     rtol=rtol['env'], atol=atol['env'],
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
     
@@ -119,7 +119,7 @@ def forced_vdp():
     var_step = solve_ivp(env_fun, [t0,tend], y0, method='BDF', atol=atol['env'], rtol=rtol['env'])
 
     print('Integrating the envelope with BDF...')
-    bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnv, T_guess=T_guess,
+    bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
                     rtol=rtol['env'], atol=atol['env'], dTtol=5e-3,
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
