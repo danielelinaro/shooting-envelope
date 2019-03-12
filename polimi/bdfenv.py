@@ -15,7 +15,7 @@ NEWTON_MAXITER = 4
 MIN_FACTOR = 0.2
 MAX_FACTOR = 10
 
-DEBUG = False
+DEBUG = True
 if DEBUG:
     import ipdb
 
@@ -567,14 +567,10 @@ class BDFEnv(OdeSolver):
         self.y = self.y_new
         self.T = self.T_new
         self.nfev += 1
-        self.mode = self.SINGLE_STEP
-        self.n_good_steps = 0
-        if DEBUG:
-            print('BDFEnv._step_impl(%.3f)> switching integration mode to SINGLE_STEP.' % self.t)
-        #self.solver = BDFIntegerSteps(self.fun, self.t, self.y, self.t_bound,
-        #                              self.max_step, self.rtol, self.atol,
-        #                              jac=None, jac_sparsity=None,
-        #                              vectorized=False, first_step=self.T)
+        self.solver = BDFIntegerSteps(self.fun, self.t, self.y, self.t_bound,
+                                      self.max_step, self.rtol, self.atol,
+                                      jac=None, jac_sparsity=None,
+                                      vectorized=False, first_step=self.T)
         return True,None
         
     def _envelope_fun(self,t,y,T_guess=None):

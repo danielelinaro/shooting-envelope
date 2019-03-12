@@ -72,7 +72,7 @@ def forced_vdp():
     rtol = {'fun': 1e-8, 'env': 1e-3}
     atol = {'fun': 1e-10, 'env': 1e-6}
 
-    polar_forcing = True
+    polar_forcing = False
     method = 'RK45'
 
     if not polar_forcing:
@@ -120,7 +120,7 @@ def forced_vdp():
 
     print('Integrating the envelope with BDF...')
     bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnv, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'], dTtol=1e-3,
+                    rtol=rtol['env'], atol=atol['env'], dTtol=5e-3,
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     plt.figure()
