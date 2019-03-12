@@ -90,7 +90,7 @@ def forced_vdp():
         method = 'RK45'
 
     t0 = 0
-    ttran = 2000
+    ttran = 0
     if ttran > 0:
         print('Integrating the full system (transient)...')
         if method == 'BDF':
@@ -107,7 +107,7 @@ def forced_vdp():
     print('y0 =',y0)
 
     print('Integrating the full system...')
-    tend = 4000
+    tend = 5000
     if method == 'BDF':
         full = solve_ivp(fun, [t0,tend], y0, method='BDF', jac=jac, atol=atol['fun'],
                          rtol=rtol['fun'], events=event_fun, dense_output=True)
@@ -120,7 +120,7 @@ def forced_vdp():
 
     print('Integrating the envelope with BDF...')
     bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnv, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'], dTtol=1e-2,
+                    rtol=rtol['env'], atol=atol['env'], dTtol=1e-3,
                     fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
 
     plt.figure()
@@ -135,9 +135,9 @@ def forced_vdp():
             plt.plot(full['t_events'][0],full['sol'](full['t_events'][0])[i],'gx')
 
         plt.plot(var_step['t'],var_step['y'][i],'go-',lw=2,label='Var. step (fixed T)')
-        for t0,y0 in zip(var_step['t'],var_step['y'].transpose()):
-            sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-            plt.plot(sol['t'],sol['y'][i],'g')
+        #for t0,y0 in zip(var_step['t'],var_step['y'].transpose()):
+        #    sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
+        #    plt.plot(sol['t'],sol['y'][i],'g')
 
         plt.plot(bdf['t'],bdf['y'][i],'cv-',lw=2,label='BDF')
         for t0,y0 in zip(bdf['t'],bdf['y'].transpose()):

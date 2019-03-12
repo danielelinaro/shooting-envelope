@@ -15,7 +15,9 @@ NEWTON_MAXITER = 4
 MIN_FACTOR = 0.2
 MAX_FACTOR = 10
 
-import ipdb
+DEBUG = False
+if DEBUG:
+    import ipdb
 
 def compute_R(order, factor):
     """Compute the matrix for changing the differences array."""
@@ -193,6 +195,7 @@ class BDFIntegerSteps(OdeSolver):
         self.rtol, self.atol = validate_tol(rtol, atol, self.n)
         f = self.fun(self.t, self.y)
         if first_step is None:
+            import ipdb
             ipdb.set_trace()
             #self.h_abs = select_initial_step(self.fun, self.t, self.y, f,
             #                                 self.direction, 1,
@@ -323,8 +326,10 @@ class BDFIntegerSteps(OdeSolver):
             h_abs = self._round_step(self.h_abs)
             change_D(D, self.order, h_abs / self.h_abs)
 
-        print('_step_impl(%.3f)> h_abs = %f (%g*%f)' % (t, h_abs, h_abs/self.min_step, self.min_step))
-        
+        if DEBUG:
+            print('BDFIntegerSteps._step_impl(%.3f)> y = (%.4f,%.4f) h_abs = %f (%g*%f)' % \
+                  (t, self.y[0], self.y[1], h_abs, h_abs/self.min_step, self.min_step))
+
         atol = self.atol
         rtol = self.rtol
         order = self.order
@@ -383,7 +388,8 @@ class BDFIntegerSteps(OdeSolver):
                 h_abs_prev = h_abs
                 h_abs = self._round_step(h_abs * factor)
                 if h_abs == h_abs_prev:
-                    print('_step_impl(%.3f)> cannot reduce the step any further.' % t)
+                    if DEBUG:
+                        print('BDFIntegerSteps._step_impl(%.3f)> cannot reduce the step any further.' % t)
                     return False, self.TOO_SMALL_STEP
                 change_D(D, order, h_abs / h_abs_prev)
                 self.n_equal_steps = 0
@@ -403,7 +409,8 @@ class BDFIntegerSteps(OdeSolver):
                 h_abs_prev = h_abs
                 h_abs = self._round_step(h_abs * factor)
                 if h_abs == h_abs_prev:
-                    print('_step_impl(%.3f)> cannot reduce the step any further.' % t)
+                    if DEBUG:
+                        print('BDFIntegerSteps._step_impl(%.3f)> cannot reduce the step any further.' % t)
                     return False, self.TOO_SMALL_STEP
                 change_D(D, order, h_abs / h_abs_prev)
                 self.n_equal_steps = 0
@@ -449,6 +456,13 @@ class BDFIntegerSteps(OdeSolver):
         factors = error_norms ** (-1 / np.arange(order, order + 3))
 
         delta_order = np.argmax(factors) - 1
+        if DEBUG:
+            if delta_order > 0:
+                print('BDFIntegerSteps._step_impl(%.3f)> increasing order (%d -> %d).' % (t,order,order+delta_order))
+            elif delta_order < 0:
+                print('BDFIntegerSteps._step_impl(%.3f)> decreasing order (%d -> %d).' % (t,order,order+delta_order))
+            else:
+                print('BDFIntegerSteps._step_impl(%.3f)> leaving order unchanged (%d).' % (t,order))
         order += delta_order
         self.order = order
 
@@ -456,7 +470,8 @@ class BDFIntegerSteps(OdeSolver):
         h_abs_prev = self.h_abs
         self.h_abs = self._round_step(factor * self.h_abs)
         if self.h_abs == h_abs_prev:
-            print('_step_impl(%.3f)> cannot at least double the step.' % t)
+            if DEBUG:
+                print('BDFIntegerSteps._step_impl(%.3f)> cannot at least double the step.' % t)
             return False, self.TOO_SMALL_STEP
         change_D(D, order, self.h_abs / h_abs_prev)
         self.n_equal_steps = 0
@@ -490,14 +505,48 @@ class BDFEnv(OdeSolver):
         self.original_fun_method = fun_method
         self._envelope_fun(t0,y0,T_guess)
         self.T = self.T_new
-        print('The period is estimated at %.10f sec.' % self.T)
-        self.solver = BDFIntegerSteps(self.fun, t0, y0, t_bound, max_step,
-                                      rtol, atol, jac=None, jac_sparsity=None,
-                                      vectorized=False, first_step=self.T)
+        if DEBUG:
+            print('BDFEnv.__init__> the period is estimated at %.10f sec.' % self.T)
+        #self.solver = BDFIntegerSteps(self.fun, t0, y0, t_bound, max_step,
+        #                              rtol, atol, jac=None, jac_sparsity=None,
+        #                              vectorized=False, first_step=self.T)
+        self.SINGLE_STEP = 1
+        self.INTEGER_STEPS = 2
+        self.mode = self.SINGLE_STEP
+        self.n_good_steps = 0
 
     def _step_impl(self):
+        if self.mode == self.SINGLE_STEP:
+            self.fun(self.t,self.y)
+            dT = np.abs(self.T - self.T_new)
+            if DEBUG:
+                print('BDFEnv._step_impl(%.3f)> dT = %e' % (self.t,dT))
+            self.t_old = self.t
+            self.t = self.t_new
+            self.y = self.y_new
+            self.T_old = self.T
+            self.T = self.T_new
+            self.nfev += 1
+            if dT < self.dTtol:
+                self.n_good_steps += 1
+            else:
+                self.n_good_steps = 0
+            if self.n_good_steps > 3:
+                self.mode = self.INTEGER_STEPS
+                if DEBUG:
+                    print('BDFEnv._step_impl(%.3f)> switching integration mode to INTEGER_STEPS.' % self.t)
+                self.solver = BDFIntegerSteps(self.fun, self.t, self.y, self.t_bound,
+                                              self.max_step, self.rtol, self.atol,
+                                              jac=None, jac_sparsity=None,
+                                              vectorized=False, first_step=self.T)
+
+
+            return True,None
+
         success,message = self.solver._step_impl()
         dT = np.abs(self.T - self.T_new)
+        if DEBUG:
+            print('BDFEnv._step_impl(%.3f)> dT = %e' % (self.t,dT))
         if success and dT < self.dTtol:
             self.T = self.T_new
             self.solver.min_step = self.T
@@ -511,30 +560,21 @@ class BDFEnv(OdeSolver):
             self.njev = self.solver.njev
             self.nlu = self.solver.nlu
             return success,message
-        print('_step_impl(%.3f)> dT = %e' % (self.t,dT))
-        #ipdb.set_trace()
-        #print('t =',self.t)
-        #print('y =',self.y)
-        #import polimi.systems as psys
-        #A = [5,0]
-        #T = [10,1]
-        #epsilon = 1e-3
-        #fun = lambda t,y: psys.vdp(t,y,epsilon,A,T)
-        #jac = lambda t,y: psys.vdp_jac(t,y,epsilon)
-        #event_fun = lambda t,y: psys.vdp_extrema(t,y,epsilon,A,T,0)
-        #event_fun.direction = -1  # detect maxima (derivative goes from positive to negative)
-        #sol = solve_ivp(fun, [self.t,self.t+self.T*3], self.y, method='BDF', jac=jac, atol=1e-10, rtol=1e-8, events=event_fun)
-        #ipdb.set_trace()
+
         self.fun(self.t,self.y)
         self.t_old = self.t
         self.t = self.t_new
         self.y = self.y_new
         self.T = self.T_new
         self.nfev += 1
-        self.solver = BDFIntegerSteps(self.fun, self.t, self.y, self.t_bound,
-                                      self.max_step, self.rtol, self.atol,
-                                      jac=None, jac_sparsity=None,
-                                      vectorized=False, first_step=self.T)
+        self.mode = self.SINGLE_STEP
+        self.n_good_steps = 0
+        if DEBUG:
+            print('BDFEnv._step_impl(%.3f)> switching integration mode to SINGLE_STEP.' % self.t)
+        #self.solver = BDFIntegerSteps(self.fun, self.t, self.y, self.t_bound,
+        #                              self.max_step, self.rtol, self.atol,
+        #                              jac=None, jac_sparsity=None,
+        #                              vectorized=False, first_step=self.T)
         return True,None
         
     def _envelope_fun(self,t,y,T_guess=None):
@@ -579,13 +619,18 @@ class BDFEnv(OdeSolver):
             if np.dot(w,f/np.linalg.norm(f))+b > 0:
                 T = t_ev-t
                 break
-        print('_envelope_fun(%.3f)> T = %.6f.' % (t,T))
-        self.T_new = T
-        self.t_new = t+self.T_new
+        try:
+            self.T_new = T
+        except:
+            self.T_new = T_guess
+            if DEBUG:
+                print('BDFEnv._envelope_fun(%.3f)> T = T_guess = %.6f.' % (t,self.T_new))
+        self.t_new = t + self.T_new
         self.y_new = sol_b['sol'](self.t_new)
-        #print('_envelope_fun> t = %.8f T_guess = %.8f T_new = %.8f' % (t,T_guess,self.T_new))
+        if DEBUG:
+            print('BDFEnv._envelope_fun(%.3f)> y = (%.4f,%.4f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T_new))
         # return the "vector field" of the envelope
-        return 1./T * (self.y_new - sol_a['sol'](t))
+        return 1./self.T_new * (self.y_new - sol_a['sol'](t))
 
     def _dense_output_impl(self):
         raise NotImplementedError
