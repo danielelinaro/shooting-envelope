@@ -12,19 +12,14 @@ def forward_euler(fun, t_span, y0, h):
     return {'t': t, 'y': y}
 
 def backward_euler(fun, t_span, y0, h):
-    from scipy.optimize import newton
+    from scipy.optimize import fsolve
     n_dim = len(y0)
     t = np.arange(t_span[0],t_span[1],h)
     n_steps = len(t)
     y = np.zeros((n_dim,n_steps))
     y[:,0] = y0
     for i in range(1,n_steps):
-        try:
-            y_next = newton(lambda Y: Y-y[:,i-1]-h*fun(t[i],Y), y[:,i-1], maxiter=5000)
-        except:
-            import ipdb
-            ipdb.set_trace()
-        y[:,i] = y[:,i-1] + h*fun(t[i],y_next)
+        y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h*fun(t[i],Y), y[:,i-1])
     return {'t': t, 'y': y}
 
 def bdf(fun, t_span, y0, h, order):
@@ -78,3 +73,58 @@ def bdf(fun, t_span, y0, h, order):
         dydt[:,i] = fun(t[i],y[:,i])
     
     return {'t': t, 'y': y}
+
+def vanderpol():
+    from systems import vdp
+    import matplotlib.pyplot as plt
+    from scipy.integrate import solve_ivp
+    A = [0]
+    T = [1]
+    epsilon = 1e-3
+    y0 = [2e-3,0]
+    tend = 1000
+    h = 0.05
+    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    sol = solve_ivp(fun, [0,tend], y0, method='RK45', rtol=1e-6, atol=1e-8)
+    print(np.mean(np.diff(sol['t'])))
+    sol_fw = forward_euler(fun, [0,tend], y0, h/5)
+    sol_bw = backward_euler(fun, [0,tend], y0, h/5)
+    sol_bdf = bdf(fun, [0,tend], y0, h, order=3)
+    plt.plot(sol['t'],sol['y'][0],'k',label='solve_ivp')
+    plt.plot(sol_fw['t'],sol_fw['y'][0],'b',label='FW')
+    plt.plot(sol_bw['t'],sol_bw['y'][0],'r',label='BW')
+    plt.plot(sol_bdf['t'],sol_bdf['y'][0],'m',label='BDF')
+    plt.legend(loc='best')
+    plt.show()
+
+def main():
+    import matplotlib.pyplot as plt
+    equil = True
+    if equil:
+        l = -1
+        fun = lambda t,y: l*y
+        sol = lambda t: np.exp(l*t)
+        y0 = np.array([1])
+        tend = 10
+        h = 0.05
+    else:
+        f = 1
+        fun = lambda t,y: 2 * np.pi * f * np.cos(2 * np.pi * f * t)
+        sol = lambda t: np.sin(2 * np.pi * f * t)
+        y0 = np.array([0])
+        tend = 5./f
+        h = 0.001
+    sol_fw = forward_euler(fun, [0,tend], y0, h)
+    sol_bw = backward_euler(fun, [0,tend], y0, h)
+    sol_bdf = bdf(fun, [0,tend], y0, 2*h, order=3)
+    t = np.linspace(0,tend,1000)
+    plt.plot(t,sol(t),'k',label='Solution')
+    plt.plot(sol_fw['t'],sol_fw['y'][0],'b',label='FW')
+    plt.plot(sol_bw['t'],sol_bw['y'][0],'r',label='BW')
+    plt.plot(sol_bdf['t'],sol_bdf['y'][0],'m',label='BDF')
+    plt.legend(loc='best')
+    plt.show()
+
+if __name__ == '__main__':
+    main()
+    #vanderpol()

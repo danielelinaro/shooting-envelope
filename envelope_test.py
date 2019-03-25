@@ -70,27 +70,32 @@ def forced_vdp():
     T_exact = 10.
     T_guess = 0.9 * T_exact
     rtol = {'fun': 1e-8, 'env': 1e-3}
-    atol = {'fun': 1e-10, 'env': 1e-6}
+    atol = {'fun': 1e-10, 'env': 1e-3}
 
-    polar_forcing = False
+    polar_forcing = True
     method = 'RK45'
 
+    T = [T_exact,1000.]
+    A = [1.,5]
+    #T = [T_exact]
+    #A = [10]
+
     if not polar_forcing:
-        T = [T_exact,1.]
-        A = [5.,0.]
         y0 = [2e-3,0]
         fun = lambda t,y: vdp(t,y,epsilon,A,T)
         jac = lambda t,y: vdp_jac(t,y,epsilon)
         event_fun = lambda t,y: vdp_extrema(t,y,epsilon,A,T,0)
         event_fun.direction = -1  # detect maxima (derivative goes from positive to negative)
     else:
-        A,T = 5.,T_exact
-        y0 = [2e-3,0,1,0]
+        y0 = [2e-3,0]
+        for i in range(len(A)):
+            y0.append(1.)
+            y0.append(0.)
         fun = lambda t,y: vdp_auto(t,y,epsilon,A,T)
         method = 'RK45'
 
     t0 = 0
-    ttran = 0
+    ttran = 2000
     if ttran > 0:
         print('Integrating the full system (transient)...')
         if method == 'BDF':
@@ -101,13 +106,15 @@ def forced_vdp():
         t0 = tran['t'][-1]
         y0 = tran['y'][:,-1]
         #plt.plot(tran['t'],tran['y'][0],'k')
+        #plt.plot(tran['t'],tran['y'][2],'r')
+        #plt.plot(tran['t'],tran['y'][4],'g')
         #plt.show()
-    
+
     print('t0 =',t0)
     print('y0 =',y0)
 
     print('Integrating the full system...')
-    tend = 5000
+    tend = 3000
     if method == 'BDF':
         full = solve_ivp(fun, [t0,tend], y0, method='BDF', jac=jac, atol=atol['fun'],
                          rtol=rtol['fun'], events=event_fun, dense_output=True)
