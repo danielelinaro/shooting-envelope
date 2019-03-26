@@ -22,7 +22,7 @@ def backward_euler(fun, t_span, y0, h):
         y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h*fun(t[i],Y), y[:,i-1])
     return {'t': t, 'y': y}
 
-def bdf(fun, t_span, y0, h, order):
+def BDF(fun, t_span, y0, h, order):
 
     if order <= 0 or order > 6:
         raise Exception('order must be a value between 1 and 6')
@@ -61,14 +61,58 @@ def bdf(fun, t_span, y0, h, order):
         dydt[:,i] = fun(t[i],y[:,i])
         
     for i in range(order,n_steps):
+
         ### predictor ###
         y_p = np.zeros(n_dim)
         for j in range(order):
             y_p += A[order-1,j]*y[:,i-1-j] + h*B[order-1,j]*dydt[:,i-1-j]
-        ### corrector ###
-        y_c = A[order-1,0]*y[:,i-1] + h*Bstar[order-1,0]*fun(t[i],y_p)
-        for j in range(1,order):
-            y_c += A[order-1,j]*y[:,i-j] + h*Bstar[order-1,j]*dydt[:,i-j]
+
+        #### corrector ###
+        converged = False
+        while not converged:
+            y_c = A[order-1,0]*y[:,i-1] + h*Bstar[order-1,0]*fun(t[i],y_p)
+            for j in range(1,order):
+                y_c += A[order-1,j]*y[:,i-j] + h*Bstar[order-1,j]*dydt[:,i-j]
+            if np.linalg.norm(y_p-y_c) < 1e-8:
+                converged = True
+            y_p = y_c
+
+        y[:,i] = y_c
+        dydt[:,i] = fun(t[i],y[:,i])
+
+    return {'t': t, 'y': y}
+
+def AB(fun, t_span, y0, h, order):
+
+    if order <= 0 or order > 6:
+        raise Exception('order must be a value between 1 and 6')
+
+    A = np.zeros((6,6))
+    B = np.zeros((6,6))
+    Bstar = np.zeros((6,6))
+    A[:,0] = 1.
+    B[0,0] = 1.
+    B[1,:2] = np.array([3.,-1.])/2.
+    B[2,:3] = np.array([23.,-16.,5.])/12.
+    B[3,:4] = np.array([55.,-59.,37.,-9.])/24.
+    B[4,:5] = np.array([1901.,-2774.,2616.,-1274.,251.])/720.
+    B[5,:6] = np.array([4277.,-7923.,9982.,-7298.,2877.,-475.])/1440.
+
+    n_dim = len(y0)
+    t = np.arange(t_span[0],t_span[1],h)
+    n_steps = len(t)
+    y = np.zeros((n_dim,n_steps))
+    dydt = np.zeros((n_dim,n_steps))
+    y[:,0] = y0
+    dydt[:,0] = fun(t[0],y[:,0])
+
+    for i in range(1,n_steps):
+        ### predictor ###
+        y_p = np.zeros(n_dim)
+        for j in range(np.min((i,order))):
+            y_p += A[order-1,j]*y[:,i-1-j] + h*B[order-1,j]*dydt[:,i-1-j]
+        #### corrector ###
+        y_c = y_p
         y[:,i] = y_c
         dydt[:,i] = fun(t[i],y[:,i])
     
@@ -86,16 +130,60 @@ def vanderpol():
     h = 0.05
     fun = lambda t,y: vdp(t,y,epsilon,A,T)
     sol = solve_ivp(fun, [0,tend], y0, method='RK45', rtol=1e-6, atol=1e-8)
-    print(np.mean(np.diff(sol['t'])))
-    sol_fw = forward_euler(fun, [0,tend], y0, h/5)
-    sol_bw = backward_euler(fun, [0,tend], y0, h/5)
-    sol_bdf = bdf(fun, [0,tend], y0, h, order=3)
+    #sol_fw = forward_euler(fun, [0,tend], y0, h/5)
+    #sol_bw = backward_euler(fun, [0,tend], y0, h/5)
+    k_am = 3
+    sol_bdf = BDF(fun, [0,tend], y0, h, order=k_am)
+    k_ab = 3
+    sol_ab = AB(fun, [0,tend], y0, h, order=k_ab)
     plt.plot(sol['t'],sol['y'][0],'k',label='solve_ivp')
-    plt.plot(sol_fw['t'],sol_fw['y'][0],'b',label='FW')
-    plt.plot(sol_bw['t'],sol_bw['y'][0],'r',label='BW')
-    plt.plot(sol_bdf['t'],sol_bdf['y'][0],'m',label='BDF')
+    #plt.plot(sol_fw['t'],sol_fw['y'][0],'b',label='FW')
+    #plt.plot(sol_bw['t'],sol_bw['y'][0],'r',label='BW')
+    plt.plot(sol_bdf['t'],sol_bdf['y'][0],'b',label='A-M(%d)'%k_am)
+    plt.plot(sol_ab['t'],sol_ab['y'][0],'m',label='A-B(%d)'%k_ab)
     plt.legend(loc='best')
     plt.show()
+
+def bdf_test():
+    l = -1
+    fun = lambda t,y: l*y
+    sol = lambda t: np.exp(l*t)
+    y0 = np.array([1])
+    order = 4
+    print('%13s %13s %13s %13s' % ('h','y','error','error/h^%d'%order))
+    for n in range(1,11):
+        h = 2**(-n)
+        tend = 2+h
+        sol_bdf = BDF(fun, [0,tend], y0, h, order)
+        error = sol(sol_bdf['t'][-1]) - sol_bdf['y'][0,-1]
+        print('%13.5e %13.5e %13.5e %13.5e' % (h,sol_bdf['y'][0,-1],error,error/(h**order)))
+
+def ab_test():
+    l = -1
+    fun = lambda t,y: l*y
+    sol = lambda t: np.exp(l*t)
+    y0 = np.array([1])
+    print('%13s %13s %13s %13s' % ('h','y','error','error/h^2'))
+    for n in range(1,11):
+        h = 2**(-n)
+        tend = 1+h
+        sol_ab = AB(fun, [0,tend], y0, h, order=2)
+        error = sol(sol_ab['t'][-1]) - sol_ab['y'][0,-1]
+        print('%13.5e %13.5e %13.5e %13.5e' % (h,sol_ab['y'][0,-1],error,error/(h**1)))
+
+    print('')
+    for k in range(1,8):
+        h = 2**(-k)
+        n = 2**k - 1
+        y = np.exp(-h)
+        fold = -h
+        for i in range(n):
+            f = -h*y
+            y += 1.5*f - 0.5*fold
+            fold = f
+        error = np.exp(-1.) - y
+        errbyh = error/h**2
+        print('%13.5e %13.5e %13.5e %13.5e' % (h,y,error,errbyh))
 
 def main():
     import matplotlib.pyplot as plt
@@ -126,5 +214,7 @@ def main():
     plt.show()
 
 if __name__ == '__main__':
-    main()
+    #main()
     #vanderpol()
+    #ab_test()
+    bdf_test()
