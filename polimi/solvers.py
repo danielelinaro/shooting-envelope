@@ -1,5 +1,6 @@
 
 import numpy as np
+from numpy.linalg import norm
 
 def forward_euler(fun, t_span, y0, h):
     n_dim = len(y0)
@@ -51,6 +52,7 @@ def BDF(fun, t_span, y0, h, order):
     dydt = np.zeros((n_dim,n_steps))
     y[:,0] = y0
     dydt[:,0] = fun(t[0],y[:,0])
+    max_step = h*20
     
     for i in range(1,order):
         k1 = fun(t[i-1],y[:,i-1])
@@ -59,23 +61,50 @@ def BDF(fun, t_span, y0, h, order):
         k4 = fun(t[i-1],y[:,i-1]+h*k3)
         y[:,i] = y[:,i-1] + h*(k1+2*k2+2*k3+k4)/6.
         dydt[:,i] = fun(t[i],y[:,i])
-        
+
+    rtol = 1e-3
+    atol = 1e-6
+    corr_tol = max(10 * np.finfo(float).eps / rtol, min(0.03, rtol ** 0.5))
+    max_corr_iter = 5
+    
     for i in range(order,n_steps):
 
         ### predictor ###
         y_p = np.zeros(n_dim)
         for j in range(order):
             y_p += A[order-1,j]*y[:,i-1-j] + h*B[order-1,j]*dydt[:,i-1-j]
-
+        scale = atol + rtol * np.abs(y_p)
+        
         #### corrector ###
         converged = False
-        while not converged:
+        dy_norm_old = None
+        
+        for k in range(max_corr_iter):
+            # correct the current value
             y_c = A[order-1,0]*y[:,i-1] + h*Bstar[order-1,0]*fun(t[i],y_p)
             for j in range(1,order):
                 y_c += A[order-1,j]*y[:,i-j] + h*Bstar[order-1,j]*dydt[:,i-j]
-            if np.linalg.norm(y_p-y_c) < 1e-8:
+
+            # have we reached convergence?
+            dy = y_c - y_p
+            dy_norm = norm(dy / scale)
+            if dy_norm_old is None:
+                rate = None
+            else:
+                rate = dy_norm / dy_norm_old
+
+            if dy_norm == 0 or (rate is not None and rate / (1 - rate) * dy_norm < corr_tol):
                 converged = True
+                break
+
             y_p = y_c
+            dy_norm_old = dy_norm
+
+        if not converged:
+            import ipdb
+            ipdb.set_trace()
+        elif h < max_step:
+            h *= 2
 
         y[:,i] = y_c
         dydt[:,i] = fun(t[i],y[:,i])
@@ -149,7 +178,7 @@ def bdf_test():
     fun = lambda t,y: l*y
     sol = lambda t: np.exp(l*t)
     y0 = np.array([1])
-    order = 4
+    order = 3
     print('%13s %13s %13s %13s' % ('h','y','error','error/h^%d'%order))
     for n in range(1,11):
         h = 2**(-n)
@@ -215,6 +244,6 @@ def main():
 
 if __name__ == '__main__':
     #main()
-    #vanderpol()
+    vanderpol()
     #ab_test()
-    bdf_test()
+    #bdf_test()
