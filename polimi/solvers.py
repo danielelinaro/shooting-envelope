@@ -23,6 +23,101 @@ def backward_euler(fun, t_span, y0, h):
         y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h*fun(t[i],Y), y[:,i-1])
     return {'t': t, 'y': y}
 
+def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6):
+    from scipy.optimize import fsolve
+    #n_dim = len(y0)
+    t = [t_span[0]]
+    y = [y0]
+    h = h0
+    while t[-1] < t_span[1]:
+        t_cur = t[-1]
+        y_cur = y[-1]
+        t_next = t_cur + h
+        if t_next > t_span[1]:
+            t_next = t_span[1]
+            h = t_next - t_cur
+        y_next = fsolve(lambda Y: Y-y_cur-h*fun(t_next,Y), y_cur)[0]
+        scale = rtol * np.abs(y_next) + atol
+        f_next = fun(t_next,y_next)
+        f_cur = fun(t_cur,y_cur)
+        coeff = np.abs(f_next * (f_next-f_cur)/(y_next-y_cur))
+        lte = (h**2)/2 * coeff
+        h_new = np.min((hmax,0.9*np.sqrt(2*scale/coeff)))
+        if h_new >= h:
+            t.append(t_next)
+            y.append(y_next)
+        else:
+            import ipdb
+            ipdb.set_trace()
+        h = h_new
+    return {'t': np.array(t), 'y': np.array(y)}
+
+def be_var_step_test():
+    if True:
+        l = -1
+        fun = lambda t,y: l*y
+        Y = lambda t: np.exp(l*t)
+        Yp = lambda t: l * np.exp(l*t)
+        Ys = lambda t: l**2 * np.exp(l*t)
+    else:
+        w = 2*np.pi*1
+        fun = lambda t,y: w * np.cos(w*t)
+        Y = lambda t: np.sin(w*t)
+        Yp = lambda t: w * np.cos(w*t)
+        Ys = lambda t: -w**2 * np.sin(w*t)
+    t0 = 0
+    #y0 = Y(t0)
+    y0 = 5
+    rtol = 1e-6
+    atol = 1e-8
+    tend = 100
+    sol_be = backward_euler_var_step(fun, [t0,tend], y0, 1e-5, 50, rtol, atol)
+    import matplotlib.pyplot as plt
+    plt.plot(sol_be['t'],y0*Y(sol_be['t']),'k')
+    plt.plot(sol_be['t'],sol_be['y'],'rx-')
+    plt.show()
+
+def be_test():
+    if True:
+        l = -1
+        fun = lambda t,y: l*y
+        Y = lambda t: np.exp(l*t)
+        Yp = lambda t: l * np.exp(l*t)
+        Ys = lambda t: l**2 * np.exp(l*t)
+    else:
+        w = 2*np.pi*1
+        fun = lambda t,y: w * np.cos(w*t)
+        Y = lambda t: np.sin(w*t)
+        Yp = lambda t: w * np.cos(w*t)
+        Ys = lambda t: -w**2 * np.sin(w*t)
+    t0 = 100
+    y0 = np.array([Y(t0)])
+    print('%13s %13s %13s %13s %13s %13s' % ('h','y','y_BE','error','LTE','scale'))
+    rtol = 1e-6
+    atol = 1e-8
+    for n in range(1,11):
+        h = 2**(-n)
+        tend = t0 + h
+        sol_be = backward_euler(fun, [t0,tend+h], y0, h)
+        yend = sol_be['y'][0,-1]
+        error = np.abs(Y(tend) - yend)
+        #lte = (h**2)/2 * Ys(tend)
+        #lte = (h**2)/2 * l**2 * Y(tend)
+        #lte = (h**2)/2 * l**2 * yend
+        coeff = np.abs(fun(tend,yend) * (fun(tend,yend)-fun(t0,y0))/(yend-y0))
+        lte = (h**2)/2 * coeff
+        scale = rtol * np.abs(yend) + atol
+        print('%13.5e %13.5e %13.5e %13.5e %13.5e %13.5e' % (h,Y(tend),sol_be['y'][0,-1],error,lte,scale))
+    return
+    sol_be = backward_euler(fun, [t0,t0+10], y0, 1e-4)
+    import matplotlib.pyplot as plt
+    x = np.linspace(0,10,1000)
+    y = Y(x)
+    plt.plot(x,y,'k')
+    plt.plot(sol_be['t'],sol_be['y'][0],'r')
+    plt.show()
+
+
 def BDF(fun, t_span, y0, h, order):
 
     if order <= 0 or order > 6:
@@ -244,6 +339,8 @@ def main():
 
 if __name__ == '__main__':
     #main()
-    vanderpol()
+    #vanderpol()
     #ab_test()
     #bdf_test()
+    #be_test()
+    be_var_step_test()
