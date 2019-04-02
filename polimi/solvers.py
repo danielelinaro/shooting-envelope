@@ -12,6 +12,7 @@ def forward_euler(fun, t_span, y0, h):
         y[:,i] = y[:,i-1] + h*fun(t[i-1],y[:,i-1])
     return {'t': t, 'y': y}
 
+
 def backward_euler(fun, t_span, y0, h):
     from scipy.optimize import fsolve
     n_dim = len(y0)
@@ -22,6 +23,19 @@ def backward_euler(fun, t_span, y0, h):
     for i in range(1,n_steps):
         y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h*fun(t[i],Y), y[:,i-1])
     return {'t': t, 'y': y}
+
+
+def trapezoidal(fun, t_span, y0, h):
+    from scipy.optimize import fsolve
+    n_dim = len(y0)
+    t = np.arange(t_span[0],t_span[1],h)
+    n_steps = len(t)
+    y = np.zeros((n_dim,n_steps))
+    y[:,0] = y0
+    for i in range(1,n_steps):
+        y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h/2*(fun(t[i-1],y[:,i-1])+fun(t[i],Y)), y[:,i-1])
+    return {'t': t, 'y': y}
+
 
 def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
     from scipy.optimize import fsolve
@@ -79,18 +93,82 @@ def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exa
         h = h_new
     return {'t': t, 'y': y}
 
+
+def trapezoidal_var_step(fun, t_span, y0, df0, h0, hmax, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
+    from scipy.optimize import fsolve
+    import ipdb
+    if np.isscalar(y0):
+        n_dim = 1
+    else:
+        n_dim = len(y0)
+    t = np.array([t_span[0]])
+    y = np.zeros((n_dim,1))
+    y[:,0] = y0
+    f = [fun(t_span[0],y0)]
+    h = h0
+    t_cur = t_span[0]
+    y_cur = y[:,0]
+    f_cur = fun(t_cur,y_cur)
+    df_cur = df0
+    if verbose:
+        if exact is None:
+            print('%13s %13s %13s %13s %13s %13s %13s %13s' % \
+                  ('t_cur','h','y_cur','t_next','h_next','y_next','scale','LTE'))
+        else:
+            print('%13s %13s %13s %13s %13s %13s %13s %13s %13s' % \
+                  ('t_cur','h','y_cur','t_next','h_next','y_next','y_exact','scale','LTE'))
+    while t_cur < t_span[1]:
+        t_next = t_cur + h
+        if t_next > t_span[1]:
+            t_next = t_span[1]
+            h = t_next - t_cur
+        y_next = fsolve(lambda Y: Y-y_cur-h/2*(fun(t_cur,y_cur)+fun(t_next,Y)), y_cur)
+        scale = rtol * np.abs(y_next) + atol
+        #dy_next = fun(t_next,y_next)
+        #coeff = np.abs(dy_next * (dy_next-dy_cur)/(y_next-y_cur))
+        #lte = (h**2)/2 * coeff
+        f_next = fun(t_next,y_next)
+        df_next = (f_next-f_cur)/(y_next-y_cur)
+        d2f_next = (df_next-df_cur)/(y_next-y_cur)
+        coeff = np.abs(f_next * ((1+f_next)*d2f_next + df_next**2))
+        lte = (h**3)/12 * coeff
+        h_new = np.min((hmax,np.min(0.9*(12*scale/coeff)**(1/3))))
+        if verbose:
+            if exact is None:
+                print('%13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e' % \
+                      (t_cur,h,y_cur,t_next,h_new,y_next,scale,lte), end='')
+            else:
+                print('%13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e %13.5e' % \
+                      (t_cur,h,y_cur,t_next,h_new,y_next,exact(t_next),scale,lte), end='')
+        if np.all(lte <= scale):
+            t = np.append(t,t_next)
+            y = np.append(y,np.reshape(y_next,(n_dim,1)),axis=1)
+            t_cur = t_next
+            y_cur = y_next
+            f_cur = f_next
+            df_cur = df_next
+            if verbose:
+                print(' +')
+        else:
+            if verbose:
+                print(' -')
+            #ipdb.set_trace()
+        h = h_new
+    return {'t': t, 'y': y}
+
+
 def be_var_step_test():
     from scipy.integrate import solve_ivp
     
     if False:
-        l = -0.1
+        l = -1
         fun = lambda t,y: l*y
         Y = lambda t: np.exp(l*t)
         Yp = lambda t: l * np.exp(l*t)
         Ys = lambda t: l**2 * np.exp(l*t)
         t0 = 0
         y0 = Y(t0)
-        tend = 500
+        tend = 1000
     elif False:
         f = 1
         w = 2*np.pi*f
@@ -124,13 +202,75 @@ def be_var_step_test():
         
     rtol = 1e-3
     atol = 1e-6
-    sol_be = backward_euler_var_step(fun, [t0,tend], y0, 1e-5, 1, rtol, atol)
+    h0 = 1e-5
+    hmax = 1e3
+    sol_be = backward_euler_var_step(fun, [t0,tend], y0, h0, hmax, rtol, atol, verbose=False)
     import matplotlib.pyplot as plt
-    #plt.plot(sol_be['t'],Y(sol_be['t'])[0],'k')
-    plt.plot(sol_be['t'],sol_be['y'][0],'r.-')
-    plt.plot(sol['t'],sol['y'][0],'ko-')
+    plt.plot(sol_be['t'],Y(sol_be['t'])[0],'k')
+    plt.plot(sol_be['t'],sol_be['y'][0],'r.')
+    #plt.plot(sol['t'],sol['y'][0],'ko-')
     #plt.plot(sol_be['t'],sol_be['y'][1],'r')
     plt.show()
+
+
+def trap_var_step_test():
+    from scipy.integrate import solve_ivp
+
+    if False:
+        l = -1
+        fun = lambda t,y: l*y
+        Y = lambda t: np.exp(l*t)
+        Yp = lambda t: l * np.exp(l*t)
+        Ys = lambda t: l**2 * np.exp(l*t)
+        t0 = 0
+        y0 = Y(t0)
+        df0 = 0
+        tend = 1000
+    elif False:
+        f = 1
+        w = 2*np.pi*f
+        fun = lambda t,y: w * np.cos(w*t)
+        Y = lambda t: np.sin(w*t)
+        Yp = lambda t: w * np.cos(w*t)
+        Ys = lambda t: -w**2 * np.sin(w*t)
+        t0 = 0
+        y0 = Y(t0)
+        df0 = 0
+        tend = 1/f
+    elif False:
+        l = -1
+        f = 1
+        w = 2*np.pi*f
+        fun = lambda t,y: np.array([l*y[0], w*np.cos(w*t)])
+        Y = lambda t: np.sin(w*t)
+        t0 = 0
+        y0 = [1,0]
+        df0 = [0,0]
+        tend = 1/f
+    else:
+        from systems import vdp
+        epsilon = 1e-3
+        A = [0]
+        f = [10]
+        fun = lambda t,y: vdp(t,y,epsilon,A,f)
+        t0 = 0
+        y0 = [2e-3,0]
+        df0 = [0,epsilon*(1-y0[0]**2)]
+        tend = 100
+        sol = solve_ivp(fun, [t0,tend], y0, method='RK45', rtol=1e-6, atol=1e-8, dense_output=True)
+        Y = sol['sol']
+
+    rtol = 1e-2
+    atol = 1e-4
+    h0 = 1e-5
+    hmax = 1000
+    sol_trap = trapezoidal_var_step(fun, [t0,tend], y0, df0, h0, hmax, rtol, atol, verbose=False)
+    import matplotlib.pyplot as plt
+    #plt.plot(sol_trap['t'],Y(sol_trap['t'])[0],'k.')
+    plt.plot(sol['t'],sol['y'][0],'k.-')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'r')
+    plt.show()
+
 
 def be_test():
     if False:
@@ -170,6 +310,53 @@ def be_test():
     y = Y(x)
     plt.plot(x,y,'k')
     plt.plot(sol_be['t'],sol_be['y'][0],'r')
+    plt.show()
+
+
+def trap_test():
+    if True:
+        l = -1
+        fun = lambda t,y: l*y
+        df0 = l
+        Y = lambda t: np.exp(l*t)
+        Yp = lambda t: l * np.exp(l*t)
+        Ys = lambda t: l**2 * np.exp(l*t)
+        Yt = lambda t: l**3 * np.exp(l*t)
+    else:
+        w = 2*np.pi*1
+        fun = lambda t,y: w * np.cos(w*t)
+        df0 = 0
+        Y = lambda t: np.sin(w*t)
+        Yp = lambda t: w * np.cos(w*t)
+        Ys = lambda t: -w**2 * np.sin(w*t)
+        Yt = lambda t: -w**3 * np.cos(w*t)
+    t0 = 0
+    y0 = np.array([Y(t0)])
+    print('%13s %13s %13s %13s %13s %13s' % ('h','y','y_TRAP','error','LTE','scale'))
+    rtol = 1e-6
+    atol = 1e-8
+    for n in range(1,11):
+        h = 2**(-n)
+        tend = t0 + h
+        sol_trap = trapezoidal(fun, [t0,tend+h], y0, h)
+        yend = sol_trap['y'][0,-1]
+        error = np.abs(Y(tend) - yend)
+        #lte = (h**3)/12 * np.abs(Yt(tend))
+        f0 = fun(t0,y0)
+        fend = fun(tend,yend)
+        dfend = (fend-f0)/(yend-y0)
+        d2fend = (dfend-df0)/(yend-y0)
+        coeff = np.abs(fend * ((1+fend)*d2fend + dfend**2))
+        lte = (h**3)/12 * coeff
+        scale = rtol * np.abs(yend) + atol
+        print('%13.5e %13.5e %13.5e %13.5e %13.5e %13.5e' % (h,Y(tend),sol_trap['y'][0,-1],error,lte,scale))
+
+    sol_trap = trapezoidal(fun, [t0,t0+1], y0, 5e-4)
+    import matplotlib.pyplot as plt
+    x = np.linspace(0,1,1000)
+    y = Y(x)
+    plt.plot(x,y,'k')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'r')
     plt.show()
 
 
@@ -261,6 +448,7 @@ def BDF(fun, t_span, y0, h, order):
 
     return {'t': t, 'y': y}
 
+
 def AB(fun, t_span, y0, h, order):
 
     if order <= 0 or order > 6:
@@ -297,6 +485,7 @@ def AB(fun, t_span, y0, h, order):
     
     return {'t': t, 'y': y}
 
+
 def vanderpol():
     from systems import vdp
     import matplotlib.pyplot as plt
@@ -323,6 +512,7 @@ def vanderpol():
     plt.legend(loc='best')
     plt.show()
 
+
 def bdf_test():
     l = -1
     fun = lambda t,y: l*y
@@ -336,6 +526,7 @@ def bdf_test():
         sol_bdf = BDF(fun, [0,tend], y0, h, order)
         error = sol(sol_bdf['t'][-1]) - sol_bdf['y'][0,-1]
         print('%13.5e %13.5e %13.5e %13.5e' % (h,sol_bdf['y'][0,-1],error,error/(h**order)))
+
 
 def ab_test():
     l = -1
@@ -363,6 +554,7 @@ def ab_test():
         error = np.exp(-1.) - y
         errbyh = error/h**2
         print('%13.5e %13.5e %13.5e %13.5e' % (h,y,error,errbyh))
+
 
 def main():
     import matplotlib.pyplot as plt
@@ -392,6 +584,7 @@ def main():
     plt.legend(loc='best')
     plt.show()
 
+
 if __name__ == '__main__':
     #main()
     #vanderpol()
@@ -399,3 +592,5 @@ if __name__ == '__main__':
     #bdf_test()
     #be_test()
     be_var_step_test()
+    #trap_test()
+    trap_var_step_test()
