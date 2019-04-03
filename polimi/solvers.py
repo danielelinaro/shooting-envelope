@@ -2,6 +2,7 @@
 import numpy as np
 from numpy.linalg import norm
 
+
 def forward_euler(fun, t_span, y0, h):
     n_dim = len(y0)
     t = np.arange(t_span[0],t_span[1],h)
@@ -88,13 +89,11 @@ def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exa
         else:
             if verbose:
                 print(' -')
-            #import ipdb
-            #ipdb.set_trace()
         h = h_new
     return {'t': t, 'y': y}
 
 
-def trapezoidal_var_step(fun, t_span, y0, df0, h0, hmax, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
+def trapezoidal_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
     from scipy.optimize import fsolve
     import ipdb
     if np.isscalar(y0):
@@ -109,7 +108,8 @@ def trapezoidal_var_step(fun, t_span, y0, df0, h0, hmax, rtol=1e-3, atol=1e-6, e
     t_cur = t_span[0]
     y_cur = y[:,0]
     f_cur = fun(t_cur,y_cur)
-    df_cur = df0
+    df_cur = np.zeros(n_dim)
+
     if verbose:
         if exact is None:
             print('%13s %13s %13s %13s %13s %13s %13s %13s' % \
@@ -124,13 +124,10 @@ def trapezoidal_var_step(fun, t_span, y0, df0, h0, hmax, rtol=1e-3, atol=1e-6, e
             h = t_next - t_cur
         y_next = fsolve(lambda Y: Y-y_cur-h/2*(fun(t_cur,y_cur)+fun(t_next,Y)), y_cur)
         scale = rtol * np.abs(y_next) + atol
-        #dy_next = fun(t_next,y_next)
-        #coeff = np.abs(dy_next * (dy_next-dy_cur)/(y_next-y_cur))
-        #lte = (h**2)/2 * coeff
         f_next = fun(t_next,y_next)
         df_next = (f_next-f_cur)/(y_next-y_cur)
         d2f_next = (df_next-df_cur)/(y_next-y_cur)
-        coeff = np.abs(f_next * ((1+f_next)*d2f_next + df_next**2))
+        coeff = np.abs(f_next * (f_next*d2f_next + 2*(df_next**2)))
         lte = (h**3)/12 * coeff
         h_new = np.min((hmax,np.min(0.9*(12*scale/coeff)**(1/3))))
         if verbose:
@@ -152,7 +149,6 @@ def trapezoidal_var_step(fun, t_span, y0, df0, h0, hmax, rtol=1e-3, atol=1e-6, e
         else:
             if verbose:
                 print(' -')
-            #ipdb.set_trace()
         h = h_new
     return {'t': t, 'y': y}
 
@@ -224,7 +220,6 @@ def trap_var_step_test():
         Ys = lambda t: l**2 * np.exp(l*t)
         t0 = 0
         y0 = Y(t0)
-        df0 = 0
         tend = 1000
     elif False:
         f = 1
@@ -235,7 +230,6 @@ def trap_var_step_test():
         Ys = lambda t: -w**2 * np.sin(w*t)
         t0 = 0
         y0 = Y(t0)
-        df0 = 0
         tend = 1/f
     elif False:
         l = -1
@@ -245,7 +239,6 @@ def trap_var_step_test():
         Y = lambda t: np.sin(w*t)
         t0 = 0
         y0 = [1,0]
-        df0 = [0,0]
         tend = 1/f
     else:
         from systems import vdp
@@ -255,20 +248,19 @@ def trap_var_step_test():
         fun = lambda t,y: vdp(t,y,epsilon,A,f)
         t0 = 0
         y0 = [2e-3,0]
-        df0 = [0,epsilon*(1-y0[0]**2)]
         tend = 100
         sol = solve_ivp(fun, [t0,tend], y0, method='RK45', rtol=1e-6, atol=1e-8, dense_output=True)
         Y = sol['sol']
 
-    rtol = 1e-2
-    atol = 1e-4
+    rtol = 1e-3
+    atol = 1e-6
     h0 = 1e-5
     hmax = 1000
-    sol_trap = trapezoidal_var_step(fun, [t0,tend], y0, df0, h0, hmax, rtol, atol, verbose=False)
+    sol_trap = trapezoidal_var_step(fun, [t0,tend], y0, h0, hmax, rtol, atol, verbose=False)
     import matplotlib.pyplot as plt
     #plt.plot(sol_trap['t'],Y(sol_trap['t'])[0],'k.')
     plt.plot(sol['t'],sol['y'][0],'k.-')
-    plt.plot(sol_trap['t'],sol_trap['y'][0],'r')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'r.-')
     plt.show()
 
 
