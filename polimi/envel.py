@@ -2,7 +2,7 @@
 import ipdb
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, newton_krylov
 
 DEBUG = True
 VERBOSE_DEBUG = False
@@ -111,7 +111,7 @@ class EnvelopeSolver (object):
             self.t_new = t + self.T
             self.y_new = sol['y'][:,-1]
             if VERBOSE_DEBUG:
-                print('EnvelopeSolver._envelope_fun(%.3f)> y = (%.4f,%.4f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T))
+                print('EnvelopeSolver._envelope_fun(%.3f)> y = (%.6f,%.6f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T))
             # return the "vector field" of the envelope
             self.original_fun_period_eval += 1
             return 1./self.T * (sol['y'][:,-1] - y)
@@ -181,33 +181,32 @@ class BEEnvelope (EnvelopeSolver):
                                          jac, jac_sparsity, vectorized, fun_method)
 
 
-
     def _step(self):
         H = self.H
-        if H == 0:
-            ipdb.set_trace()
-        t1 = self.t[-1]
-        y1 = self.y[:,-1]
-        f1 = self.f[:,-1]
 
-        if t1+H > self.t_span[1]:
-            H = self.T * np.max((1,np.floor((self.t_span[1] - t1) / self.T)))
-        t2 = t1 + H
+        t_cur = self.t[-1]
+        y_cur = self.y[:,-1]
+        f_cur = self.f[:,-1]
+
+        if t_cur + H > self.t_span[1]:
+            H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
+        t_next = t_cur + H
 
         # estimate the next value by extrapolation using explicit Euler
-        y_extrap = y1 + H * f1
+        y_extrap = y_cur + H * f_cur
         # correct the estimate using implicit Euler
-        y2 = fsolve(lambda Y: Y - y1 - H*self._envelope_fun(t2,Y), y_extrap, xtol=1e-3)
+        #y_next = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, xtol=1e-1)
+        y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
 
         # the value of the derivative at the new point
-        f2 = self._envelope_fun(t2,y2)
+        f_next = self._envelope_fun(t_next,y_next)
 
-        scale = self.atol + self.rtol * np.abs(y2)
+        scale = self.atol + self.rtol * np.abs(y_next)
         # compute the local truncation error
-        coeff = np.abs(f2 * (f2 - f1) / (y2 - y1))
+        coeff = np.abs(f_next * (f_next - f_cur) / (y_next - y_cur))
         coeff[coeff == 0] = np.min(coeff[coeff > 0])
         lte = H**2 / 2 * coeff
 
@@ -222,9 +221,9 @@ class BEEnvelope (EnvelopeSolver):
         if np.any(lte > scale):
             return EnvelopeSolver.LTE_TOO_LARGE
 
-        self.t_next = t2
-        self.y_next = y2
-        self.f_next = f2
+        self.t_next = t_next
+        self.y_next = y_next
+        self.f_next = f_next
 
         return EnvelopeSolver.SUCCESS
 
@@ -246,8 +245,7 @@ class TrapEnvelope (EnvelopeSolver):
 
     def _step(self):
         H = self.H
-        if H == 0:
-            ipdb.set_trace()
+
         t_cur = self.t[-1]
         y_cur = self.y[:,-1]
         f_cur = self.f[:,-1]
@@ -260,7 +258,8 @@ class TrapEnvelope (EnvelopeSolver):
         # estimate the next value by extrapolation using explicit Euler
         y_extrap = y_cur + H * f_cur
         # correct the estimate using the trapezoidal rule
-        y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-3)
+        #y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-1)
+        y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
@@ -295,6 +294,8 @@ class TrapEnvelope (EnvelopeSolver):
         return EnvelopeSolver.SUCCESS
 
 
+pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=1)
+
 def autonomous():
     from systems import vdp
     epsilon = 1e-3
@@ -309,6 +310,11 @@ def autonomous():
     t_be,y_be = be_solver.solve()
     t_trap,y_trap = trap_solver.solve()
     sol = solve_ivp(fun, [t_span[0],t_span[-1]], y0, method='BDF', rtol=1e-8, atol=1e-10)
+
+    np.savetxt('vdp_autonomous.txt', pack(sol['t'],sol['y']), fmt='%.3e')
+    np.savetxt('vdp_autonomous_envelope_BE.txt', pack(t_be,y_be), fmt='%.3e')
+    np.savetxt('vdp_autonomous_envelope_trap.txt', pack(t_trap,y_trap), fmt='%.3e')
+
     import matplotlib.pyplot as plt
     plt.plot(sol['t'],sol['y'][0],'k')
     plt.plot(t_be,y_be[0],'ro-')
@@ -382,9 +388,9 @@ def forced():
         tran = solve_ivp(fun, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
         t0 = tran['t'][-1]
         y0 = tran['y'][:,-1]
-        plt.plot(tran['t'],tran['y'][0],'k')
-        plt.plot(tran['t'],tran['y'][1],'r')
-        plt.show()
+        #plt.plot(tran['t'],tran['y'][0],'k')
+        #plt.plot(tran['t'],tran['y'][1],'r')
+        #plt.show()
 
     print('t0 =',t0)
     print('y0 =',y0)
@@ -397,6 +403,14 @@ def forced():
     t_trap,y_trap = trap_solver.solve()
     print('The number of integrated periods of the original system with TRAP is %d.' % trap_solver.original_fun_period_eval)
     sol = solve_ivp(fun, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
+
+    np.savetxt('vdp_forced_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
+               pack(sol['t'],sol['y']), fmt='%.3e')
+    np.savetxt('vdp_forced_envelope_BE_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
+               pack(t_be,y_be), fmt='%.3e')
+    np.savetxt('vdp_forced_envelope_trap_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
+               pack(t_trap,y_trap), fmt='%.3e')
+
     plt.plot(sol['t'],sol['y'][0],'k')
     plt.plot(t_be,y_be[0],'ro-')
     plt.plot(t_trap,y_trap[0],'go-')
