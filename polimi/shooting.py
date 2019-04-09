@@ -1,6 +1,6 @@
 
 import numpy as np
-from numpy.linalg import inv
+from numpy.linalg import inv, solve
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 from systems import jacobian_finite_differences
@@ -59,7 +59,7 @@ def shooting(fun, y0_guess, T_guess, autonomous, jac=None, max_iter=100, tol=1e-
             r = np.append(r,0.)
         else:
             M = phi - np.eye(N)
-        X_new = X - np.matmul(inv(M),r)
+        X_new = X - solve(M,r)
         if do_plot:
             if i == 0:
                 fig,(ax1,ax2) = plt.subplots(1,2)
