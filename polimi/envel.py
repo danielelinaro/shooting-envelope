@@ -78,7 +78,7 @@ class EnvelopeSolver (object):
 
             if DEBUG:
                 print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f' % (self.t[-1],self.T,self.H))
-        return self.t,self.y
+        return {'t': self.t, 'y': self.y}
 
 
     def _one_period_step(self):
@@ -132,7 +132,7 @@ class EnvelopeSolver (object):
                               vectorized=self.original_fun_vectorized,
                               dense_output=True,rtol=self.original_fun_rtol,
                               atol=self.original_fun_atol)
-            sol_b = solve_ivp(self.original_fun,[sol_a['t'][-1],t+2*T_guess],
+            sol_b = solve_ivp(self.original_fun,[sol_a['t'][-1],t+1.5*T_guess],
                               sol_a['y'][:,-1],self.original_fun_method,jac=self.original_jac,
                               jac_sparsity=self.original_jac_sparsity,
                               vectorized=self.original_fun_vectorized,
@@ -143,7 +143,7 @@ class EnvelopeSolver (object):
                               self.original_fun_method,vectorized=self.original_fun_vectorized,
                               dense_output=True,rtol=self.original_fun_rtol,
                               atol=self.original_fun_atol)
-            sol_b = solve_ivp(self.original_fun,[sol_a['t'][-1],t+2*T_guess],
+            sol_b = solve_ivp(self.original_fun,[sol_a['t'][-1],t+1.5*T_guess],
                               sol_a['y'][:,-1],self.original_fun_method,
                               vectorized=self.original_fun_vectorized,
                               events=lambda t,y: np.dot(w,y)+b,dense_output=True,
@@ -167,7 +167,7 @@ class EnvelopeSolver (object):
         self.y_new = sol_b['sol'](self.t_new)
         if VERBOSE_DEBUG:
             print('EnvelopeSolver._envelope_fun(%.3f)> y = (%.4f,%.4f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T_new))
-        self.original_fun_period_eval += 2
+        self.original_fun_period_eval += 1.5
         # return the "vector field" of the envelope
         return 1./self.T_new * (self.y_new - sol_a['sol'](t))
 
@@ -294,7 +294,9 @@ class TrapEnvelope (EnvelopeSolver):
         return EnvelopeSolver.SUCCESS
 
 
+# for saving data
 pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=1)
+
 
 def autonomous():
     from systems import vdp
@@ -307,18 +309,18 @@ def autonomous():
     T_guess = 2*np.pi
     be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6)
     trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6)
-    t_be,y_be = be_solver.solve()
-    t_trap,y_trap = trap_solver.solve()
+    sol_be = be_solver.solve()
+    sol_trap = trap_solver.solve()
     sol = solve_ivp(fun, [t_span[0],t_span[-1]], y0, method='BDF', rtol=1e-8, atol=1e-10)
 
     np.savetxt('vdp_autonomous.txt', pack(sol['t'],sol['y']), fmt='%.3e')
-    np.savetxt('vdp_autonomous_envelope_BE.txt', pack(t_be,y_be), fmt='%.3e')
-    np.savetxt('vdp_autonomous_envelope_trap.txt', pack(t_trap,y_trap), fmt='%.3e')
+    np.savetxt('vdp_autonomous_envelope_BE.txt', pack(sol_be['t'],sol_be['y']), fmt='%.3e')
+    np.savetxt('vdp_autonomous_envelope_trap.txt', pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
 
     import matplotlib.pyplot as plt
     plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(t_be,y_be[0],'ro-')
-    plt.plot(t_trap,y_trap[0],'go-')
+    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
     plt.show()
 
 
@@ -357,12 +359,12 @@ def forced_polar():
     t_span = [t0,t0+2000]
     be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=rtol['env'], atol=atol['env'])
     trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=rtol['env'], atol=atol['env'])
-    t_be,y_be = be_solver.solve()
-    t_trap,y_trap = trap_solver.solve()
+    sol_be = be_solver.solve()
+    sol_trap = trap_solver.solve()
     sol = solve_ivp(fun, t_span, y0, method='BDF', rtol=1e-8, atol=1e-10)
     plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(t_be,y_be[0],'ro-')
-    plt.plot(t_trap,y_trap[0],'go-')
+    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
     plt.show()
 
 def forced():
@@ -388,9 +390,9 @@ def forced():
         tran = solve_ivp(fun, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
         t0 = tran['t'][-1]
         y0 = tran['y'][:,-1]
-        #plt.plot(tran['t'],tran['y'][0],'k')
-        #plt.plot(tran['t'],tran['y'][1],'r')
-        #plt.show()
+        plt.plot(tran['t'],tran['y'][0],'k')
+        plt.plot(tran['t'],tran['y'][1],'r')
+        plt.show()
 
     print('t0 =',t0)
     print('y0 =',y0)
@@ -398,28 +400,28 @@ def forced():
     t_span = [t0,t0+T[1]]
     be_solver = BEEnvelope(fun, t_span, y0, T_guess, T=T_exact, rtol=rtol['env'], atol=atol['env'])
     trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, T=T_exact, rtol=rtol['env'], atol=atol['env'])
-    t_be,y_be = be_solver.solve()
+    sol_be = be_solver.solve()
     print('The number of integrated periods of the original system with BE is %d.' % be_solver.original_fun_period_eval)
-    t_trap,y_trap = trap_solver.solve()
+    sol_trap = trap_solver.solve()
     print('The number of integrated periods of the original system with TRAP is %d.' % trap_solver.original_fun_period_eval)
     sol = solve_ivp(fun, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
 
     np.savetxt('vdp_forced_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
                pack(sol['t'],sol['y']), fmt='%.3e')
     np.savetxt('vdp_forced_envelope_BE_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-               pack(t_be,y_be), fmt='%.3e')
+               pack(sol_be['t'],sol_be['y']), fmt='%.3e')
     np.savetxt('vdp_forced_envelope_trap_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-               pack(t_trap,y_trap), fmt='%.3e')
+               pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
 
     plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(t_be,y_be[0],'ro-')
-    plt.plot(t_trap,y_trap[0],'go-')
+    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
     plt.show()
 
 
 def main():
-    #autonomous()
-    #forced_polar()
+    autonomous()
+    forced_polar()
     forced()
 
 

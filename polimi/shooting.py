@@ -123,8 +123,7 @@ def shooting_envelope(fun, y0_guess, T_guess, small_T,
         trap_solver = envel.TrapEnvelope(lambda t,y: _extended_system(t,y,fun,fun_jac,T,autonomous),
                                          [0,1], y0_ext, None, T=small_T/T, rtol=env_rtol, atol=env_atol,
                                          fun_rtol=fun_rtol, fun_atol=fun_atol)
-        t,y = trap_solver.solve()
-        sol = {'t': t, 'y': y}
+        sol = trap_solver.solve()
         r = np.array([x[-1]-x[0] for x in sol['y'][:N]])
         phi = np.reshape(sol['y'][N:N**2+N,-1],(N,N))
         if autonomous:
