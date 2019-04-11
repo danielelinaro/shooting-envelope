@@ -81,6 +81,10 @@ class EnvelopeSolver (object):
         return {'t': self.t, 'y': self.y}
 
 
+    def _step(self):
+        raise NotImplementedError
+
+
     def _one_period_step(self):
         self._envelope_fun(self.t[-1],self.y[:,-1])
         self.t = np.append(self.t,self.t_new)
