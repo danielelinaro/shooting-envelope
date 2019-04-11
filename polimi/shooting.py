@@ -92,12 +92,15 @@ class BaseShooting (object):
             ax1.set_ylabel('x')
             ax2.plot(sol['y'][1,:],sol['y'][0,:],'k')
             ax2.set_xlabel('y')
-            plt.show()
 
+        sol = {'y0': X_new[:N], 'phi': phi, 'n_iter': i+1,
+               't': sol['t'], 'y': sol['y']}
         if self.estimate_T:
-            return X_new[:N],X_new[-1],phi,i+1
+            sol['T'] = X_new[-1]
+        else:
+            sol['T'] = self.T
 
-        return X_new,phi,i+1
+        return sol
 
 
 class Shooting (BaseShooting):
@@ -133,6 +136,7 @@ class EnvelopeShooting (BaseShooting):
 
 def autonomous(with_jac=True):
     from systems import vdp, vdp_jac
+    import matplotlib.pyplot as plt
     estimate_T = True
     epsilon = 1e-3
     T = [2*np.pi]
@@ -150,15 +154,17 @@ def autonomous(with_jac=True):
                          y0_guess, T_guess, estimate_T,
                          rtol=1e-6, atol=1e-8)
 
-    y0_opt,T,phi,n_iter = shoot.run(do_plot=True)
-    floquet_multi,_ = np.linalg.eig(phi)
-    print('T = %g.' % T)
+    sol = shoot.run(do_plot=True)
+    floquet_multi,_ = np.linalg.eig(sol['phi'])
+    print('T = %g.' % sol['T'])
     print('eig(Phi) = (%f,%f).' % tuple(floquet_multi))
-    print('Number of iterations: %d.' % n_iter)
+    print('Number of iterations: %d.' % sol['n_iter'])
+    plt.show()
 
 
 def forced(with_jac=True):
     from systems import vdp, vdp_jac
+    import matplotlib.pyplot as plt
     estimate_T = False
     epsilon = 1e-3
     T = [10.]
@@ -174,73 +180,91 @@ def forced(with_jac=True):
                          y0_guess, T[0], estimate_T,
                          rtol=1e-6, atol=1e-8)
 
-    y0_opt,phi,n_iter = shoot.run(do_plot=True)
-    print('Number of iterations: %d.' % n_iter)
+    sol = shoot.run(do_plot=True)
+    print('Number of iterations: %d.' % sol['n_iter'])
+    plt.show()
 
 
 def forced_two_frequencies(with_jac=True):
     from systems import vdp, vdp_jac
+    import matplotlib.pyplot as plt
     estimate_T = False
     epsilon = 1e-3
-    T = [10.,200.]
-    A = [1.2,1.2]
+    T = [4,400]
+    A = [10,1]
     y0_guess = [-2,0]
 
     if with_jac:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
                          y0_guess, np.max(T), estimate_T,
                          lambda t,y: vdp_jac(t,y,epsilon),
-                         rtol=1e-6, atol=1e-8)
+                         rtol=1e-8, atol=1e-10)
     else:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
                          y0_guess, np.max(T), estimate_T,
-                         rtol=1e-6, atol=1e-8)
+                         rtol=1e-8, atol=1e-10)
 
-    y0_opt,phi,n_iter = shoot.run(do_plot=True)
-    print('Number of iterations: %d.' % n_iter)
+    sol = shoot.run(do_plot=False)
+    print('Number of iterations: %d.' % sol['n_iter'])
+    #plt.show()
+    return sol
 
 
 def forced_envelope():
     from systems import vdp, vdp_jac
+    import matplotlib.pyplot as plt
     estimate_T = False
     epsilon = 1e-3
-    T = [10,1000]
+    T = [4,400]
     A = [10,1]
-    shooting_tol = 1e-3
-    rtol = {'fun': 1e-6, 'env': 1e-1}
-    atol = {'fun': 1e-8, 'env': 1e-3}
+    y0_guess = [-2,0]
     T_small = np.min(T)
     T_large = np.max(T)
 
-    t0 = 0
-    y0 = [2e-3,0]
-    ttran = 500
-    if ttran > 0:
-        print('Integrating the full system (transient)...')
-        tran = solve_ivp(lambda t,y: vdp(t,y,epsilon,A,T), [t0,ttran],
-                         y0, atol=atol['fun'], rtol=rtol['fun'])
-        t0 = tran['t'][-1]
-        y0 = tran['y'][:,-1]
-        #import matplotlib.pyplot as plt
-        #plt.plot(tran['t'],tran['y'][0],'k')
-        #plt.plot(tran['t'],tran['y'][1],'r')
-        #plt.show()
-
-    y0_guess = y0 * 0.9
     shoot = EnvelopeShooting(lambda t,y: vdp(t,y,epsilon,A,T),
                              y0_guess, T_large, estimate_T, T_small,
                              lambda t,y: vdp_jac(t,y,epsilon),
-                             shooting_tol=shooting_tol,
-                             env_rtol=rtol['env'], env_atol=atol['env'],
-                             fun_rtol=rtol['fun'], fun_atol=atol['fun'])
+                             shooting_tol=1e-3,
+                             env_rtol=1e-3, env_atol=1e-5,
+                             fun_rtol=1e-8, fun_atol=1e-10)
 
-    y0_opt,phi,n_iter = shoot.run(do_plot=True)
-    print('Number of iterations: %d.' % n_iter)
+    sol = shoot.run(do_plot=False)
+    print('Number of iterations: %d.' % sol['n_iter'])
+    #plt.show()
+    return sol
+
+
+def normalized():
+    import matplotlib.pyplot as plt
+    from systems import vdp, vdp_jac
+    epsilon = 1e-3
+    A = [10,2]
+    T = [10,200]
+    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    fun_norm = lambda t,y: np.max(T) * vdp(t*np.max(T), y, epsilon, A, T)
+    t_span = [0,3*np.max(T)]
+    y0 = [2e-3,0]
+    tran = solve_ivp(fun, t_span, y0, rtol=1e-6, atol=1e-8)
+    t0 = 0
+    y0 = tran['y'][:,-1]
+    t_span = [t0, t0+np.max(T)]
+    sol = solve_ivp(fun, t_span, y0, rtol=1e-6, atol=1e-8)
+    t_span = [0,1]
+    sol_norm = solve_ivp(fun_norm, t_span, y0, rtol=1e-6, atol=1e-8)
+    plt.plot(sol['t']/np.max(T),sol['y'][0],'k',label='Original')
+    plt.plot(sol_norm['t'],sol_norm['y'][0],'r',label='Normalized')
+    plt.legend(loc='best')
+    plt.show()
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    #normalized()
     #autonomous()
     #forced()
-    #forced_two_frequencies()
-    forced_envelope()
+    sol = forced_two_frequencies()
+    sol_env = forced_envelope()
+    plt.plot(sol['t'],sol['y'][0,:],'k')
+    plt.plot(sol_env['t'],sol_env['y'][0,:],'ro')
+    plt.show()
 
