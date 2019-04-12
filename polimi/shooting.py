@@ -8,17 +8,13 @@ import envel
 
 class BaseShooting (object):
 
-    def __init__(self, fun, y0_guess, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7):
+    def __init__(self, fun, N, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7):
         # original number of dimensions of the system
-        self.N = len(y0_guess)
+        self.N = N
         self.fun = fun
-        self.X = y0_guess
-
-        if estimate_T:
-            self.X = np.append(self.X,T)
-        else:
-            # the period is given
-            self.T = T
+        self.estimate_T = estimate_T
+        # if estimate_T is true, self.T is the initial guess for the period
+        self.T = T
 
         if jac is None:
             self.jac_factor = None
@@ -31,7 +27,6 @@ class BaseShooting (object):
         self.tol = tol
         self.rtol = rtol
         self.atol = atol
-        self.estimate_T = estimate_T
 
 
     def _extended_system(self, t, y):
@@ -50,16 +45,19 @@ class BaseShooting (object):
         raise NotImplementedError
 
 
-    def run(self, max_iter=100, do_plot=False):
+    def run(self, y0, max_iter=100, do_plot=False):
         if do_plot:
             import matplotlib.pyplot as plt
         N = self.N
-        X = self.X
+        if len(y0) != N:
+            raise Exception('y0 has wrong dimensions')
+        if self.estimate_T:
+            y0 = np.append(y0, self.T)
         for i in range(max_iter):
-            y0_ext = np.concatenate((X[:N],np.eye(N).flatten()))
+            y0_ext = np.concatenate((y0[:N],np.eye(N).flatten()))
             if self.estimate_T:
+                self.T = y0[-1]
                 y0_ext = np.concatenate((y0_ext,np.zeros(N)))
-                self.T = X[-1]
             sol = self._integrate(y0_ext)
             r = np.array([x[-1]-x[0] for x in sol['y'][:N]])
             phi = np.reshape(sol['y'][N:N**2+N,-1],(N,N))
@@ -72,20 +70,20 @@ class BaseShooting (object):
                 r = np.append(r,0.)
             else:
                 M = phi - np.eye(N)
-            X_new = X - solve(M,r)
+            y0_new = y0 - solve(M,r)
             if do_plot:
                 if i == 0:
                     fig,(ax1,ax2) = plt.subplots(1,2)
                     ax1.plot(sol['t'],sol['y'][0,:],'r')
                     ax2.plot(sol['y'][1,:],sol['y'][0,:],'r')
                 else:
-                    if np.all(np.abs(X_new-X) < self.tol):
+                    if np.all(np.abs(y0_new - y0) < self.tol):
                         ax1.plot(sol['t'],sol['y'][0,:],'k')
                     else:
                         ax1.plot(sol['t'],sol['y'][0,:])
-            if np.all(np.abs(X_new-X) < self.tol):
+            if np.all(np.abs(y0_new-y0) < self.tol):
                 break
-            X = X_new
+            y0 = y0_new
 
         if do_plot:
             ax1.set_xlabel('Time')
@@ -93,10 +91,10 @@ class BaseShooting (object):
             ax2.plot(sol['y'][1,:],sol['y'][0,:],'k')
             ax2.set_xlabel('y')
 
-        sol = {'y0': X_new[:N], 'phi': phi, 'n_iter': i+1,
+        sol = {'y0': y0_new[:N], 'phi': phi, 'n_iter': i+1,
                't': sol['t'], 'y': sol['y']}
         if self.estimate_T:
-            sol['T'] = X_new[-1]
+            sol['T'] = y0_new[-1]
         else:
             sol['T'] = self.T
 
@@ -105,8 +103,8 @@ class BaseShooting (object):
 
 class Shooting (BaseShooting):
 
-    def __init__(self, fun, y0_guess, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7):
-        super(Shooting, self).__init__(fun, y0_guess, T, estimate_T, jac, tol, rtol, atol)
+    def __init__(self, fun, N, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7):
+        super(Shooting, self).__init__(fun, N, T, estimate_T, jac, tol, rtol, atol)
 
 
     def _integrate(self, y0):
@@ -115,9 +113,9 @@ class Shooting (BaseShooting):
 
 class EnvelopeShooting (BaseShooting):
 
-    def __init__(self, fun, y0_guess, T, estimate_T, small_T, jac=None, shooting_tol=1e-3,
+    def __init__(self, fun, N, T, estimate_T, small_T, jac=None, shooting_tol=1e-3,
                  env_rtol=1e-1, env_atol=1e-3, fun_rtol=1e-5, fun_atol=1e-7):
-        super(EnvelopeShooting, self).__init__(fun, y0_guess, T, estimate_T,
+        super(EnvelopeShooting, self).__init__(fun, N, T, estimate_T,
                                                jac, shooting_tol, fun_rtol, fun_atol)
         self.small_T = small_T
         self.env_rtol = env_rtol
@@ -139,22 +137,23 @@ def autonomous(with_jac=True):
     import matplotlib.pyplot as plt
     estimate_T = True
     epsilon = 1e-3
-    T = [2*np.pi]
     A = [0]
-    y0_guess = [-2,3]
+    T = [2*np.pi]
     T_guess = 0.6*T[0]
+    y0_guess = [-2,3]
+    N = 2
 
     if with_jac:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                         y0_guess, T_guess, estimate_T,
+                         N, T_guess, estimate_T,
                          lambda t,y: vdp_jac(t,y,epsilon),
                          rtol=1e-6, atol=1e-8)
     else:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                         y0_guess, T_guess, estimate_T,
+                         N, T_guess, estimate_T,
                          rtol=1e-6, atol=1e-8)
 
-    sol = shoot.run(do_plot=True)
+    sol = shoot.run(y0_guess, do_plot=True)
     floquet_multi,_ = np.linalg.eig(sol['phi'])
     print('T = %g.' % sol['T'])
     print('eig(Phi) = (%f,%f).' % tuple(floquet_multi))
@@ -167,20 +166,22 @@ def forced(with_jac=True):
     import matplotlib.pyplot as plt
     estimate_T = False
     epsilon = 1e-3
-    T = [10.]
     A = [1.2]
+    T = [10.]
     y0_guess = [-1,2]
+    N = 2
+
     if with_jac:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                         y0_guess, T[0], estimate_T,
+                         N, T[0], estimate_T,
                          lambda t,y: vdp_jac(t,y,epsilon),
                          rtol=1e-6, atol=1e-8)
     else:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                         y0_guess, T[0], estimate_T,
+                         N, T[0], estimate_T,
                          rtol=1e-6, atol=1e-8)
 
-    sol = shoot.run(do_plot=True)
+    sol = shoot.run(y0_guess, do_plot=True)
     print('Number of iterations: %d.' % sol['n_iter'])
     plt.show()
 
@@ -190,21 +191,22 @@ def forced_two_frequencies(with_jac=True):
     import matplotlib.pyplot as plt
     estimate_T = False
     epsilon = 1e-3
-    T = [4,400]
     A = [10,1]
+    T = [4,400]
     y0_guess = [-2,0]
+    N = 2
 
     if with_jac:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                         y0_guess, np.max(T), estimate_T,
+                         N, np.max(T), estimate_T,
                          lambda t,y: vdp_jac(t,y,epsilon),
                          rtol=1e-8, atol=1e-10)
     else:
         shoot = Shooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                         y0_guess, np.max(T), estimate_T,
+                         N, np.max(T), estimate_T,
                          rtol=1e-8, atol=1e-10)
 
-    sol = shoot.run(do_plot=False)
+    sol = shoot.run(y0_guess, do_plot=False)
     print('Number of iterations: %d.' % sol['n_iter'])
     #plt.show()
     return sol
@@ -215,20 +217,21 @@ def forced_envelope():
     import matplotlib.pyplot as plt
     estimate_T = False
     epsilon = 1e-3
-    T = [4,400]
     A = [10,1]
-    y0_guess = [-2,0]
+    T = [4,400]
     T_small = np.min(T)
     T_large = np.max(T)
+    y0_guess = [-2,0]
+    N = 2
 
     shoot = EnvelopeShooting(lambda t,y: vdp(t,y,epsilon,A,T),
-                             y0_guess, T_large, estimate_T, T_small,
+                             N, T_large, estimate_T, T_small,
                              lambda t,y: vdp_jac(t,y,epsilon),
                              shooting_tol=1e-3,
                              env_rtol=1e-3, env_atol=1e-5,
                              fun_rtol=1e-8, fun_atol=1e-10)
 
-    sol = shoot.run(do_plot=False)
+    sol = shoot.run(y0_guess, do_plot=False)
     print('Number of iterations: %d.' % sol['n_iter'])
     #plt.show()
     return sol
