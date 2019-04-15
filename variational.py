@@ -111,10 +111,15 @@ def variational_vdp_one_freq():
                                        T=T_small/T_large, rtol=1e-1, atol=atol)
     var_env = var_envelope_solver.solve()
 
+    eig,_ = np.linalg.eig(np.reshape(var_sol['y'][2:,-1],(2,2)))
+    var_eig,_ = np.linalg.eig(np.reshape(var_env['y'][2:,-1],(2,2)))
+
+    print('Eigenvalues of Phi:', eig)
+    print('Eigenvalues of Phi computed with envelope:', var_eig)
+
     plt.plot(t_span_var,[0,0],'b')
     plt.plot(var_sol['t'],var_sol['y'][2],'k')
     plt.plot(var_env['t'],var_env['y'][2],'mo')
-    plt.ion()
     plt.show()
 
 
