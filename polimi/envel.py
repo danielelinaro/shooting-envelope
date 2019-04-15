@@ -60,24 +60,28 @@ class EnvelopeSolver (object):
                 if self.estimate_T:
                     self.T = self.T_new
                 self.period = np.append(self.period,self.T)
+                msg = 'OK'
             elif flag == EnvelopeSolver.DT_TOO_LARGE:
                 # the variation in period was too large
                 if self.H > 2*self.T:
                     # reduce the step if this is greater than twice the oscillation period
                     self.H_new = np.floor(np.round(self.H/self.T)/2) * self.T
+                    msg = 'T/2'
                 else:
                     # otherwise simply move the integration one period forward
                     self._one_period_step()
+                    msg = '1T'
             elif flag == EnvelopeSolver.LTE_TOO_LARGE:
                 # the LTE was above threshold: _step has already changed the value of H_new
-                pass
+                msg = 'LTE'
 
             if self.H_new < self.T:
                 self._one_period_step()
+                msg += ' 1T'
             self.H = self.H_new
 
             if DEBUG:
-                print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f' % (self.t[-1],self.T,self.H))
+                print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f - %s' % (self.t[-1],self.T,self.H,msg))
         return {'t': self.t, 'y': self.y}
 
 

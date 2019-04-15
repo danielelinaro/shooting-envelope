@@ -132,6 +132,29 @@ class EnvelopeShooting (BaseShooting):
         return solver.solve()
 
 
+def normalized():
+    import matplotlib.pyplot as plt
+    from systems import vdp, vdp_jac
+    epsilon = 1e-3
+    A = [10,2]
+    T = [10,200]
+    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    fun_norm = lambda t,y: np.max(T) * vdp(t*np.max(T), y, epsilon, A, T)
+    t_span = [0,3*np.max(T)]
+    y0 = [2e-3,0]
+    tran = solve_ivp(fun, t_span, y0, rtol=1e-6, atol=1e-8)
+    t0 = 0
+    y0 = tran['y'][:,-1]
+    t_span = [t0, t0+np.max(T)]
+    sol = solve_ivp(fun, t_span, y0, rtol=1e-6, atol=1e-8)
+    t_span = [0,1]
+    sol_norm = solve_ivp(fun_norm, t_span, y0, rtol=1e-6, atol=1e-8)
+    plt.plot(sol['t']/np.max(T),sol['y'][0],'k',label='Original')
+    plt.plot(sol_norm['t'],sol_norm['y'][0],'r',label='Normalized')
+    plt.legend(loc='best')
+    plt.show()
+
+
 def autonomous(with_jac=True):
     from systems import vdp, vdp_jac
     import matplotlib.pyplot as plt
@@ -228,7 +251,7 @@ def forced_envelope():
                              N, T_large, estimate_T, T_small,
                              lambda t,y: vdp_jac(t,y,epsilon),
                              shooting_tol=1e-3,
-                             env_rtol=1e-3, env_atol=1e-5,
+                             env_rtol=1e-1, env_atol=[1e-2,1e-2,1e-6,1e-6,1e-6,1e-6],
                              fun_rtol=1e-8, fun_atol=1e-10)
 
     sol = shoot.run(y0_guess, do_plot=False)
@@ -237,37 +260,24 @@ def forced_envelope():
     return sol
 
 
-def normalized():
+def main():
     import matplotlib.pyplot as plt
+    from envel import TrapEnvelope
     from systems import vdp, vdp_jac
-    epsilon = 1e-3
-    A = [10,2]
-    T = [10,200]
-    fun = lambda t,y: vdp(t,y,epsilon,A,T)
-    fun_norm = lambda t,y: np.max(T) * vdp(t*np.max(T), y, epsilon, A, T)
-    t_span = [0,3*np.max(T)]
-    y0 = [2e-3,0]
-    tran = solve_ivp(fun, t_span, y0, rtol=1e-6, atol=1e-8)
-    t0 = 0
-    y0 = tran['y'][:,-1]
-    t_span = [t0, t0+np.max(T)]
-    sol = solve_ivp(fun, t_span, y0, rtol=1e-6, atol=1e-8)
-    t_span = [0,1]
-    sol_norm = solve_ivp(fun_norm, t_span, y0, rtol=1e-6, atol=1e-8)
-    plt.plot(sol['t']/np.max(T),sol['y'][0],'k',label='Original')
-    plt.plot(sol_norm['t'],sol_norm['y'][0],'r',label='Normalized')
-    plt.legend(loc='best')
+
+    sol = forced_two_frequencies()
+    sol_env = forced_envelope()
+
+    plt.plot(sol['t'],sol['y'][2,:],'k')
+    plt.plot(sol_env['t'],sol_env['y'][2,:],'mo')
     plt.show()
 
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
     #normalized()
     #autonomous()
     #forced()
-    sol = forced_two_frequencies()
-    sol_env = forced_envelope()
-    plt.plot(sol['t'],sol['y'][0,:],'k')
-    plt.plot(sol_env['t'],sol_env['y'][0,:],'ro')
-    plt.show()
+    #forced_two_frequencies()
+    #forced_envelope()
+    main()
 
