@@ -3,9 +3,30 @@ import ipdb
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.optimize import fsolve, newton_krylov
+from scipy.interpolate import interp1d
 
 DEBUG = True
 VERBOSE_DEBUG = False
+
+class EnvelopeInterp (object):
+
+    def __init__(self, fun, sol, T):
+        self.fun = fun
+        self.sol = sol
+        self.T = T
+
+    def __call__(self, t):
+        t0 = np.floor(t/self.T) * self.T
+        if np.any(np.abs(self.sol['t'] - t0) < self.T/2):
+            idx = np.argmin(np.abs(self.sol['t'] - t0))
+            y0 = self.sol['y'][:,idx]
+        else:
+            start = np.where(self.sol['t'] < t0)[0][-1]
+            idx = np.arange(start, start+2)
+            y0 = interp1d(self.sol['t'][idx],self.sol['y'][:,idx])(t0)
+        sol = solve_ivp(self.fun, [t0,t], y0, method='RK45', rtol=1e-8, atol=1e-8)
+        return sol['y'][:,-1]
+
 
 class EnvelopeSolver (object):
 
