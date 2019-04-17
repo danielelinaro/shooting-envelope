@@ -14,8 +14,13 @@ class EnvelopeInterp (object):
         self.fun = fun
         self.sol = sol
         self.T = T
+        self.t = None
+        self.y = None
+        self.total_integrated_time = 0
 
     def __call__(self, t):
+        if t == self.t:
+            return self.y
         t0 = np.floor(t/self.T) * self.T
         if np.any(np.abs(self.sol['t'] - t0) < self.T/2):
             idx = np.argmin(np.abs(self.sol['t'] - t0))
@@ -25,7 +30,10 @@ class EnvelopeInterp (object):
             idx = np.arange(start, start+2)
             y0 = interp1d(self.sol['t'][idx],self.sol['y'][:,idx])(t0)
         sol = solve_ivp(self.fun, [t0,t], y0, method='RK45', rtol=1e-8, atol=1e-8)
-        return sol['y'][:,-1]
+        self.total_integrated_time += t-t0
+        self.t = t
+        self.y = sol['y'][:,-1]
+        return self.y
 
 
 class EnvelopeSolver (object):

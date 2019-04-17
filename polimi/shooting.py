@@ -4,7 +4,7 @@ from numpy.linalg import solve
 from scipy.integrate import solve_ivp
 from common import num_jac
 import envel
-
+import ipdb
 
 class BaseShooting (object):
 
@@ -54,6 +54,7 @@ class BaseShooting (object):
         if self.estimate_T:
             y0 = np.append(y0, self.T)
         for i in range(max_iter):
+            print('BaseShooting.run({})>     y0 = {}.'.format(i+1,y0[:N]))
             y0_ext = np.concatenate((y0[:N],np.eye(N).flatten()))
             if self.estimate_T:
                 self.T = y0[-1]
@@ -71,6 +72,7 @@ class BaseShooting (object):
             else:
                 M = phi - np.eye(N)
             y0_new = y0 - solve(M,r)
+            print('BaseShooting.run({})> y0_new = {}.'.format(i+1,y0_new[:N]))
             if do_plot:
                 if i == 0:
                     fig,(ax1,ax2) = plt.subplots(1,2)
@@ -81,6 +83,7 @@ class BaseShooting (object):
                         ax1.plot(sol['t'],sol['y'][0,:],'k')
                     else:
                         ax1.plot(sol['t'],sol['y'][0,:])
+            print('BaseShooting.run({})> error = {}.'.format(i+1,np.abs(y0_new - y0)))
             if np.all(np.abs(y0_new-y0) < self.tol):
                 break
             y0 = y0_new
@@ -260,18 +263,56 @@ def forced_envelope():
     return sol
 
 
+#def main():
+#    import matplotlib.pyplot as plt
+#    from envel import TrapEnvelope
+#    from systems import vdp, vdp_jac
+#
+#    sol = forced_two_frequencies()
+#    sol_env = forced_envelope()
+#
+#    plt.plot(sol['t'],sol['y'][2,:],'k')
+#    plt.plot(sol_env['t'],sol_env['y'][2,:],'mo')
+#    plt.show()
+
+
 def main():
-    import matplotlib.pyplot as plt
-    from envel import TrapEnvelope
     from systems import vdp, vdp_jac
+    import matplotlib.pyplot as plt
+    estimate_T = False
+    epsilon = 1e-3
+    A = [1]
+    T_small = 2*np.pi
+    T_large = 100 * T_small
+    T = [T_large]
+    N = 2
 
-    sol = forced_two_frequencies()
-    sol_env = forced_envelope()
+    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    jac = lambda t,y: vdp_jac(t,y,epsilon)
 
-    plt.plot(sol['t'],sol['y'][2,:],'k')
-    plt.plot(sol_env['t'],sol_env['y'][2,:],'mo')
+    tran = solve_ivp(fun, [0,20*T_large], [0,1], rtol=1e-6, atol=1e-8)
+    y0 = tran['y'][:,-1]
+    sol = solve_ivp(fun, [0,T_large], y0, rtol=1e-6, atol=1e-8)
+    print('{} -> {}'.format(sol['y'][:,0],sol['y'][:,-1]))
+
+    shoot = Shooting(fun, N, T_large, estimate_T, jac, tol=1e-3, rtol=1e-6, atol=1e-8)
+
+    #plt.figure()
+    sol = shoot.run(y0, max_iter=10, do_plot=True)
+    print('Number of iterations: %d.' % sol['n_iter'])
+
+    #env_shoot = EnvelopeShooting(lambda t,y: vdp(t,y,epsilon,A,T),
+    #                               N, T_large, estimate_T, T_small,
+    #                               lambda t,y: vdp_jac(t,y,epsilon),
+    #                               shooting_tol=1e-3,
+    #                               env_rtol=1e-1, env_atol=[1e-2,1e-2,1e-6,1e-6,1e-6,1e-6],
+    #                               fun_rtol=1e-8, fun_atol=1e-10)
+
+    #plt.figure()
+    #env_sol = env_shoot.run(y0_guess, max_iter=10, do_plot=True)
+    #print('Number of iterations: %d.' % env_sol['n_iter'])
+
     plt.show()
-
 
 if __name__ == '__main__':
     #normalized()
