@@ -44,7 +44,8 @@ class EnvelopeSolver (object):
     
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
-                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45'):
+                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
+                 vars_to_use=[]):
         self.dTtol = dTtol
         self.max_step = np.floor(max_step)
         self.rtol, self.atol = rtol, atol
@@ -62,6 +63,11 @@ class EnvelopeSolver (object):
         self.y = np.zeros((self.n_dim,1))
         self.y[:,0] = self.y0
         self.f = np.zeros((self.n_dim,1))
+        if len(vars_to_use) == 0:
+            self.vars_to_use = np.arange(self.n_dim)
+        else:
+            self.vars_to_use = vars_to_use
+        print('Variables to use: {}.'.format(self.vars_to_use))
         if T is not None:
             self.estimate_T = False
             self.T = T
@@ -111,7 +117,7 @@ class EnvelopeSolver (object):
 
             if DEBUG:
                 print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f - %s' % (self.t[-1],self.T,self.H,msg))
-        return {'t': self.t, 'y': self.y}
+        return {'t': self.t, 'y': self.y, 'T': self.period}
 
 
     def _step(self):
@@ -159,41 +165,26 @@ class EnvelopeSolver (object):
         # orthogonal to fun(t,y)
         f = self.original_fun(t,y)
         w = f/np.linalg.norm(f)
-        b = -np.dot(w,y)
-        # first integration without events, because event(t0) = 0
-        # and the solver goes crazy
-        if self.original_fun_method == 'BDF':
-            sol_a = solve_ivp(self.original_fun,[t,t+0.5*T_guess],y,
-                              self.original_fun_method,jac=self.original_jac,
-                              jac_sparsity=self.original_jac_sparsity,
-                              vectorized=self.original_fun_vectorized,
-                              dense_output=True,rtol=self.original_fun_rtol,
-                              atol=self.original_fun_atol)
-            sol_b = solve_ivp(self.original_fun,[sol_a['t'][-1],t+1.5*T_guess],
-                              sol_a['y'][:,-1],self.original_fun_method,jac=self.original_jac,
-                              jac_sparsity=self.original_jac_sparsity,
-                              vectorized=self.original_fun_vectorized,
-                              events=lambda t,y: np.dot(w,y)+b,dense_output=True,
-                              rtol=self.original_fun_rtol,atol=self.original_fun_atol)
-        else:
-            sol_a = solve_ivp(self.original_fun,[t,t+0.5*T_guess],y,
-                              self.original_fun_method,vectorized=self.original_fun_vectorized,
-                              dense_output=True,rtol=self.original_fun_rtol,
-                              atol=self.original_fun_atol)
-            sol_b = solve_ivp(self.original_fun,[sol_a['t'][-1],t+1.5*T_guess],
-                              sol_a['y'][:,-1],self.original_fun_method,
-                              vectorized=self.original_fun_vectorized,
-                              events=lambda t,y: np.dot(w,y)+b,dense_output=True,
-                              rtol=self.original_fun_rtol,atol=self.original_fun_atol)
+        b = -np.dot(w[self.vars_to_use],y[self.vars_to_use])
 
-        for t_ev in sol_b['t_events'][0]:
-            x_ev = sol_b['sol'](t_ev)
-            f = self.original_fun(t_ev,x_ev)
-            # check whether the crossing of the plane is in
-            # the same direction as the initial point
-            if np.dot(w,f/np.linalg.norm(f))+b > 0:
-                T = t_ev-t
-                break
+        events_fun = lambda t,y: np.dot(w[self.vars_to_use],y[self.vars_to_use]) + b
+        events_fun.direction = 1
+
+        if self.original_fun_method == 'BDF':
+            sol = solve_ivp(self.original_fun,[t,t+1.5*T_guess],y,
+                            self.original_fun_method,jac=self.original_jac,
+                            jac_sparsity=self.original_jac_sparsity,
+                            vectorized=self.original_fun_vectorized,
+                            events=events_fun,dense_output=True,
+                            rtol=self.original_fun_rtol,atol=self.original_fun_atol)
+        else:
+            sol = solve_ivp(self.original_fun,[t,t+1.5*T_guess],y,
+                            self.original_fun_method,vectorized=self.original_fun_vectorized,
+                            events=events_fun,dense_output=True,
+                            rtol=self.original_fun_rtol,atol=self.original_fun_atol)
+
+        T = sol['t_events'][0][1] - t
+
         try:
             self.T_new = T
         except:
@@ -201,21 +192,23 @@ class EnvelopeSolver (object):
             if DEBUG:
                 print('EnvelopeSolver._envelope_fun(%.3f)> T = T_guess = %.6f.' % (t,self.T_new))
         self.t_new = t + self.T_new
-        self.y_new = sol_b['sol'](self.t_new)
+        self.y_new = sol['sol'](self.t_new)
         if VERBOSE_DEBUG:
             print('EnvelopeSolver._envelope_fun(%.3f)> y = (%.4f,%.4f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T_new))
         self.original_fun_period_eval += 1.5
         # return the "vector field" of the envelope
-        return 1./self.T_new * (self.y_new - sol_a['sol'](t))
+        return 1./self.T_new * (self.y_new - sol['sol'](t))
 
 
 class BEEnvelope (EnvelopeSolver):
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
-                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45'):
+                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
+                 vars_to_use=[]):
         super(BEEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
                                          fun_rtol, fun_atol, dTtol, rtol, atol,
-                                         jac, jac_sparsity, vectorized, fun_method)
+                                         jac, jac_sparsity, vectorized, fun_method,
+                                         vars_to_use)
 
 
     def _step(self):
@@ -268,10 +261,12 @@ class BEEnvelope (EnvelopeSolver):
 class TrapEnvelope (EnvelopeSolver):
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
-                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45'):
+                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
+                 vars_to_use=[]):
         super(TrapEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
                                            fun_rtol, fun_atol, dTtol, rtol, atol,
-                                           jac, jac_sparsity, vectorized, fun_method)
+                                           jac, jac_sparsity, vectorized, fun_method,
+                                           vars_to_use)
         self.df_cur = np.zeros(self.n_dim)
 
 
@@ -343,16 +338,16 @@ def autonomous():
     fun = lambda t,y: vdp(t,y,epsilon,A,T)
     t_span = [0,1000*2*np.pi]
     y0 = [2e-3,0]
-    T_guess = 2*np.pi
+    T_guess = 2*np.pi*0.9
     be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6)
     trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6)
     sol_be = be_solver.solve()
     sol_trap = trap_solver.solve()
     sol = solve_ivp(fun, [t_span[0],t_span[-1]], y0, method='BDF', rtol=1e-8, atol=1e-10)
 
-    np.savetxt('vdp_autonomous.txt', pack(sol['t'],sol['y']), fmt='%.3e')
-    np.savetxt('vdp_autonomous_envelope_BE.txt', pack(sol_be['t'],sol_be['y']), fmt='%.3e')
-    np.savetxt('vdp_autonomous_envelope_trap.txt', pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
+    #np.savetxt('vdp_autonomous.txt', pack(sol['t'],sol['y']), fmt='%.3e')
+    #np.savetxt('vdp_autonomous_envelope_BE.txt', pack(sol_be['t'],sol_be['y']), fmt='%.3e')
+    #np.savetxt('vdp_autonomous_envelope_trap.txt', pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
 
     import matplotlib.pyplot as plt
     plt.plot(sol['t'],sol['y'][0],'k')
@@ -456,10 +451,40 @@ def forced():
     plt.show()
 
 
+def hr():
+    from systems import hr
+    b = 3
+    I = 5
+    fun = lambda t,y: hr(t,y,I,b)
+
+    y0 = [0,1,0.1]
+    t_tran = 100
+    sol = solve_ivp(fun, [0,t_tran], y0, method='RK45', rtol=1e-8, atol=1e-10)
+    y0 = sol['y'][:,-1]
+
+    t_span = [0,5000]
+    T_guess = 11
+
+    be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6,
+                           fun_rtol=1e-8, fun_atol=1e-10)
+    trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6,
+                               fun_rtol=1e-8, fun_atol=1e-10, vars_to_use=[0,1])
+    sol_be = be_solver.solve()
+    sol_trap = trap_solver.solve()
+    sol = solve_ivp(fun, [t_span[0],t_span[-1]], y0, method='RK45', rtol=1e-8, atol=1e-10)
+
+    import matplotlib.pyplot as plt
+    plt.plot(sol['t'],sol['y'][0],'k')
+    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
+    plt.plot(sol_trap['t'],sol_trap['T'],'ms-')
+    plt.show()
+
 def main():
-    autonomous()
-    forced_polar()
-    forced()
+    #autonomous()
+    #forced_polar()
+    #forced()
+    hr()
 
 
 if __name__ == '__main__':

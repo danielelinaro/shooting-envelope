@@ -91,6 +91,13 @@ def colpitts_jac(t,y,Q,g,k):
         [-Q*k*(1-k)/g,-Q*k*(1-k)/g,-1./Q]
         ])
 
+def hr(t,y,I,b,mu=0.01,s=4,x_rest=-1.6):
+    return np.array([
+        y[1] - y[0]**3 + b*y[0]**2 + I - y[2],
+        1 - 5*y[0]**2 - y[1],
+        mu * (s * (y[0] - x_rest) - y[2])
+        ])
+
 def vanderpol_test():
     import numpy as np
     import matplotlib.pyplot as plt
@@ -124,5 +131,18 @@ def burster_test():
     plt.plot(sol['t'],sol['y'][0],'k')
     plt.show()
 
+def hr_test():
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.integrate import solve_ivp
+    b = 3
+    I = 5
+    tend = 500
+    fun = lambda t,y: hr(t,y,I,b)
+    y0 = [0,1,0.1]
+    sol = solve_ivp(fun, [0,tend], y0, method='RK45', atol=1e-8, rtol=1e-10)
+    plt.plot(sol['t'],sol['y'][0],'k')
+    plt.show()
+
 if __name__ == '__main__':
-    burster_test()
+    hr_test()
