@@ -80,18 +80,37 @@ def variational_vdp():
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
     atol = [1e-2,1e-2,1e-6,1e-6,1e-6,1e-6]
-    var_sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8)
-    var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None,
-                                       T=T_small/T_large, rtol=1e-1, atol=atol)
-    var_env = var_envelope_solver.solve()
+    var_sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
+    #var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None,
+    #                                   T=T_small/T_large, rtol=1e-1, atol=atol,
+    #                                   vars_to_use=[0,1])
+    #var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=T_small/T_large*2,
+    #                                   rtol=1e-1, atol=atol, vars_to_use=[2,3,4,5])
+    #var_env = var_envelope_solver.solve()
 
     plt.subplot(1,2,1)
     plt.plot(var_sol['t'],var_sol['y'][0],'k')
-    plt.plot(var_env['t'],var_env['y'][0],'ro')
+    #plt.plot(var_env['t'],var_env['y'][0],'ro')
     plt.subplot(1,2,2)
     plt.plot(t_span_var,[0,0],'b')
     plt.plot(var_sol['t'],var_sol['y'][2],'k')
-    plt.plot(var_env['t'],var_env['y'][2],'ro')
+    #plt.plot(var_env['t'],var_env['y'][2],'ro')
+
+    x = var_sol['sol'](T_small/T_large)[2:]
+    M = np.reshape(x,(2,2))
+    Mp = M
+    print('x =', x)
+    for i in range(2,21):
+        t = i * T_small / T_large
+        y = var_sol['sol'](t)[2:]
+        Mp = np.dot(Mp,M)
+        z = Mp.flatten()
+        print('--- %02d ---' % i)
+        print('y =', y)
+        print('z =', z)
+        print('e =', np.abs((y-z)/y)*100)
+        plt.plot(t,y[0],'bo')
+        plt.plot(t,z[0],'y.')
     plt.show()
 
     
@@ -209,8 +228,8 @@ def hybrid():
     plt.show()
 
 if __name__ == '__main__':
-    #variational_vdp()
+    variational_vdp()
     #variational_linear()
-    variational_vdp_one_freq()
+    #variational_vdp_one_freq()
     #many_cycles()
     #hybrid()
