@@ -242,14 +242,32 @@ class BEEnvelope (EnvelopeSolver):
             H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
         t_next = t_cur + H
 
-        # estimate the next value by extrapolation using explicit Euler
-        y_extrap = y_cur + H * f_cur
-        # correct the estimate using implicit Euler
-        #y_next = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, xtol=1e-1)
-        y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, f_tol=1e-3)
+        # step size in units of period
+        n_periods = int(np.round(H / self.T))
+
+        # which variables to consider when deciding whether to accept or not the
+        # step based on the LTE
+        vars_to_use = np.arange(self.n_dim)
+        if self.is_variational:
+            # monodromy matrix
+            M = np.reshape(self.y_new[self.N:],(self.N,self.N)).copy()
+            vars_to_use = self.vars_to_use
+
+        if n_periods == 1:
+            # the step is equal to the period: we don't need to solve the implicit system
+            y_next = self.y_new
+        else:
+            # estimate the next value by extrapolation using explicit Euler
+            y_extrap = y_cur + H * f_cur
+            # correct the estimate using implicit Euler
+            #y_next = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, xtol=1e-1)
+            y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
+
+        if self.is_variational:
+            y_next[self.N:] = np.eye(self.N).flatten()
 
         # the value of the derivative at the new point
         f_next = self._envelope_fun(t_next,y_next)
@@ -266,10 +284,13 @@ class BEEnvelope (EnvelopeSolver):
             T = self.T
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
+        self.H_new = np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale[vars_to_use]/coeff[vars_to_use])) / T))) * T
 
-        if np.any(lte > scale):
+        if np.any(lte[vars_to_use] > scale[vars_to_use]):
             return EnvelopeSolver.LTE_TOO_LARGE
+
+        if self.is_variational:
+            self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
 
         self.t_next = t_next
         self.y_next = y_next
@@ -547,25 +568,32 @@ def variational():
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
     atol = [1e-2,1e-2,1e-6,1e-6,1e-6,1e-6]
-    var_sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
-    var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
-                                       max_step=100, jac=jac, rtol=1e-1, atol=atol,
-                                       vars_to_use=[0,1], is_variational=True)
-    var_env = var_envelope_solver.solve()
+    sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
+    be_solver = BEEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
+                           max_step=10, jac=jac, rtol=1e-1, atol=atol,
+                           vars_to_use=[0,1], is_variational=True)
+    trap_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
+                               max_step=10, jac=jac, rtol=1e-1, atol=atol,
+                               vars_to_use=[0,1], is_variational=True)
+    sol_be = be_solver.solve()
+    sol_trap = trap_solver.solve()
 
-    eig_correct,_ = np.linalg.eig(np.reshape(var_sol['y'][2:,-1],(2,2)))
-    eig_approx,_ = np.linalg.eig(np.reshape(var_env['y'][2:,-1],(2,2)))
-
-    print('    correct eigenvalues:', eig_correct)
-    print('approximate eigenvalues:', eig_approx)
+    eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
+    print('         correct eigenvalues:', eig)
+    eig,_ = np.linalg.eig(np.reshape(sol_be['y'][2:,-1],(2,2)))
+    print('  BE approximate eigenvalues:', eig)
+    eig,_ = np.linalg.eig(np.reshape(sol_trap['y'][2:,-1],(2,2)))
+    print('TRAP approximate eigenvalues:', eig)
 
     plt.subplot(1,2,1)
-    plt.plot(var_sol['t'],var_sol['y'][0],'k')
-    plt.plot(var_env['t'],var_env['y'][0],'ro')
+    plt.plot(sol['t'],sol['y'][0],'k')
+    plt.plot(sol_be['t'],sol_be['y'][0],'ro')
+    plt.plot(sol_trap['t'],sol_trap['y'][0],'go')
     plt.subplot(1,2,2)
     plt.plot(t_span_var,[0,0],'b')
-    plt.plot(var_sol['t'],var_sol['y'][2],'k')
-    plt.plot(var_env['t'],var_env['y'][2],'ro')
+    plt.plot(sol['t'],sol['y'][2],'k')
+    plt.plot(sol_be['t'],sol_be['y'][2],'ro')
+    plt.plot(sol_trap['t'],sol_trap['y'][2],'go')
     plt.show()
 
 
