@@ -125,9 +125,14 @@ class EnvelopeSolver (object):
 
             if DEBUG:
                 print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f - %s' % (self.t[-1],self.T,self.H,msg))
-        sol = {'t': self.t, 'y': self.y, 'T': np.array(self.period)}
+
+        idx, = np.where(self.t <= self.t_span[1] + self.T/2)
+        sol = {'t': self.t[idx], 'y': self.y[:,idx], 'T': np.array([self.period[i] for i in idx])}
         if self.is_variational:
-            sol['M'] = self.mono_mat
+            sol['M'] = [self.mono_mat[i] for i in idx[:-1]]
+            for i,mat in enumerate(sol['M']):
+                sol['y'][2:,i+1] = np.dot(np.reshape(sol['y'][2:,i],(self.N,self.N)), mat).flatten()
+
         return sol
 
 
@@ -139,6 +144,10 @@ class EnvelopeSolver (object):
         self._envelope_fun(self.t[-1],self.y[:,-1])
         self.t = np.append(self.t,self.t_new)
         self.y = np.append(self.y,np.reshape(self.y_new,(self.n_dim,1)),axis=1)
+        if self.is_variational:
+            M = np.reshape(self.y_new[self.N:],(self.N,self.N)).copy()
+            self.mono_mat.append(M)
+            self.y[self.N:,-1] = np.eye(self.N).flatten()
         self.f = np.append(self.f,np.reshape(self._envelope_fun(self.t[-1],self.y[:,-1]),(self.n_dim,1)),axis=1)
         if self.estimate_T:
             self.T = self.T_new
@@ -297,13 +306,17 @@ class TrapEnvelope (EnvelopeSolver):
         if t_cur + H > self.t_span[1]:
             H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
         t_next = t_cur + H
+
         # step size in units of period
         n_periods = int(np.round(H / self.T))
 
+        # which variables to consider when deciding whether to accept or not the
+        # step based on the LTE
+        vars_to_use = np.arange(self.n_dim)
         if self.is_variational:
             # monodromy matrix
-            M = np.reshape(self.y_new[self.N:],(self.N,self.N))
-            self.mono_mat.append(np.linalg.matrix_power(M.copy(),n_periods))
+            M = np.reshape(self.y_new[self.N:],(self.N,self.N)).copy()
+            vars_to_use = self.vars_to_use
 
         if n_periods == 1:
             # the step is equal to the period: we don't need to solve the implicit system
@@ -338,10 +351,13 @@ class TrapEnvelope (EnvelopeSolver):
             T = self.T
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale[self.vars_to_use]/coeff[self.vars_to_use])**(1/3)) / T))) * T
+        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale[vars_to_use]/coeff[vars_to_use])**(1/3)) / T))) * T
 
-        if np.any(lte[self.vars_to_use] > scale[self.vars_to_use]):
+        if np.any(lte[vars_to_use] > scale[vars_to_use]):
             return EnvelopeSolver.LTE_TOO_LARGE
+
+        if self.is_variational:
+            self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
 
         self.t_next = t_next
         self.y_next = y_next
@@ -533,22 +549,16 @@ def variational():
     atol = [1e-2,1e-2,1e-6,1e-6,1e-6,1e-6]
     var_sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
     var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
-                                       max_step=1, jac=jac, rtol=1e-1, atol=atol,
+                                       max_step=100, jac=jac, rtol=1e-1, atol=atol,
                                        vars_to_use=[0,1], is_variational=True)
     var_env = var_envelope_solver.solve()
 
-    M = np.eye(2)
-    for i,mat in enumerate(var_env['M']):
-        M = np.dot(M,mat)
-        var_env['y'][2:,i+1] = M.flatten()
-
     eig_correct,_ = np.linalg.eig(np.reshape(var_sol['y'][2:,-1],(2,2)))
-    eig_approx,_ = np.linalg.eig(M)
+    eig_approx,_ = np.linalg.eig(np.reshape(var_env['y'][2:,-1],(2,2)))
 
     print('    correct eigenvalues:', eig_correct)
     print('approximate eigenvalues:', eig_approx)
 
-    M = M.flatten()
     plt.subplot(1,2,1)
     plt.plot(var_sol['t'],var_sol['y'][0],'k')
     plt.plot(var_env['t'],var_env['y'][0],'ro')
