@@ -42,10 +42,11 @@ class EnvelopeSolver (object):
     DT_TOO_LARGE = 1
     LTE_TOO_LARGE = 2
     
+
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
-                 vars_to_use=[]):
+                 vars_to_use=[], is_variational=False):
         self.dTtol = dTtol
         self.max_step = np.floor(max_step)
         self.rtol, self.atol = rtol, atol
@@ -68,6 +69,13 @@ class EnvelopeSolver (object):
         else:
             self.vars_to_use = vars_to_use
         print('Variables to use: {}.'.format(self.vars_to_use))
+        self.is_variational = is_variational
+        if is_variational:
+            self.mono_mat = []
+            # the number of dimensions of the original system, i.e. the one
+            # without the variational part added
+            self.N = int((-1 + np.sqrt(1 + 4*self.n_dim)) / 2)
+            print('The number of dimensions of the original system is %d.' % self.N)
         if T is not None:
             self.estimate_T = False
             self.T = T
@@ -77,7 +85,7 @@ class EnvelopeSolver (object):
             self.f[:,0] = self._envelope_fun(self.t[0],self.y[:,0],T_guess)
             self.T = self.T_new
         self.H = self.T
-        self.period = np.array([self.T])
+        self.period = [self.T]
         if DEBUG:
             print('EnvelopeSolver.__init__(%.3f)> T = %.6f' % (self.t_span[0],self.T))
 
@@ -94,7 +102,7 @@ class EnvelopeSolver (object):
                 self.f = np.append(self.f,np.reshape(self.f_next,(self.n_dim,1)),axis=1)
                 if self.estimate_T:
                     self.T = self.T_new
-                self.period = np.append(self.period,self.T)
+                self.period.append(self.T)
                 msg = 'OK'
             elif flag == EnvelopeSolver.DT_TOO_LARGE:
                 # the variation in period was too large
@@ -117,7 +125,10 @@ class EnvelopeSolver (object):
 
             if DEBUG:
                 print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f - %s' % (self.t[-1],self.T,self.H,msg))
-        return {'t': self.t, 'y': self.y, 'T': self.period}
+        sol = {'t': self.t, 'y': self.y, 'T': np.array(self.period)}
+        if self.is_variational:
+            sol['M'] = self.mono_mat
+        return sol
 
 
     def _step(self):
@@ -133,7 +144,7 @@ class EnvelopeSolver (object):
             self.T = self.T_new
         self.H_new = self.T
         self.H = self.T
-        self.period = np.append(self.period,self.T)
+        self.period.append(self.T)
 
         
     def _envelope_fun(self,t,y,T_guess=None):
@@ -204,11 +215,11 @@ class BEEnvelope (EnvelopeSolver):
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
-                 vars_to_use=[]):
+                 vars_to_use=[], is_variational=False):
         super(BEEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
                                          fun_rtol, fun_atol, dTtol, rtol, atol,
                                          jac, jac_sparsity, vectorized, fun_method,
-                                         vars_to_use)
+                                         vars_to_use, is_variational)
 
 
     def _step(self):
@@ -262,11 +273,11 @@ class TrapEnvelope (EnvelopeSolver):
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
-                 vars_to_use=[]):
+                 vars_to_use=[], is_variational=False):
         super(TrapEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
                                            fun_rtol, fun_atol, dTtol, rtol, atol,
                                            jac, jac_sparsity, vectorized, fun_method,
-                                           vars_to_use)
+                                           vars_to_use, is_variational)
         self.df_cur = np.zeros(self.n_dim)
 
 
@@ -286,15 +297,29 @@ class TrapEnvelope (EnvelopeSolver):
         if t_cur + H > self.t_span[1]:
             H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
         t_next = t_cur + H
+        # step size in units of period
+        n_periods = int(np.round(H / self.T))
 
-        # estimate the next value by extrapolation using explicit Euler
-        y_extrap = y_cur + H * f_cur
-        # correct the estimate using the trapezoidal rule
-        #y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-1)
-        y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, f_tol=1e-3)
+        if self.is_variational:
+            # monodromy matrix
+            M = np.reshape(self.y_new[self.N:],(self.N,self.N))
+            self.mono_mat.append(np.linalg.matrix_power(M.copy(),n_periods))
+
+        if n_periods == 1:
+            # the step is equal to the period: we don't need to solve the implicit system
+            y_next = self.y_new
+        else:
+            # estimate the next value by extrapolation using explicit Euler
+            y_extrap = y_cur + H * f_cur
+            # correct the estimate using the trapezoidal rule
+            #y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-1)
+            y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
+
+        if self.is_variational:
+            y_next[self.N:] = np.eye(self.N).flatten()
 
         # the value of the derivative at the new point
         f_next = self._envelope_fun(t_next,y_next)
@@ -313,9 +338,9 @@ class TrapEnvelope (EnvelopeSolver):
             T = self.T
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
+        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale[self.vars_to_use]/coeff[self.vars_to_use])**(1/3)) / T))) * T
 
-        if np.any(lte > scale):
+        if np.any(lte[self.vars_to_use] > scale[self.vars_to_use]):
             return EnvelopeSolver.LTE_TOO_LARGE
 
         self.t_next = t_next
@@ -480,11 +505,66 @@ def hr():
     plt.plot(sol_trap['t'],sol_trap['T'],'ms-')
     plt.show()
 
+
+def variational():
+    from systems import vdp, vdp_jac
+    import matplotlib.pyplot as plt
+
+    def variational_system(fun, jac, t, y, T):
+        N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
+        J = jac(t,y[:N])
+        phi = np.reshape(y[N:N+N**2],(N,N))
+        return np.concatenate((T * fun(t*T, y[:N]), \
+                               T * np.matmul(J,phi).flatten()))
+
+    epsilon = 1e-3
+    A = [10,1]
+    T = [4,400]
+    T_large = max(T)
+    T_small = min(T)
+    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    jac = lambda t,y: vdp_jac(t,y,epsilon)
+    var_fun = lambda t,y: variational_system(fun, jac, t, y, T_large)
+
+    t_span_var = [0,1]
+    y0 = np.array([-5.8133754 ,  0.13476983])
+    y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
+
+    atol = [1e-2,1e-2,1e-6,1e-6,1e-6,1e-6]
+    var_sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
+    var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
+                                       max_step=1, jac=jac, rtol=1e-1, atol=atol,
+                                       vars_to_use=[0,1], is_variational=True)
+    var_env = var_envelope_solver.solve()
+
+    M = np.eye(2)
+    for i,mat in enumerate(var_env['M']):
+        M = np.dot(M,mat)
+        var_env['y'][2:,i+1] = M.flatten()
+
+    eig_correct,_ = np.linalg.eig(np.reshape(var_sol['y'][2:,-1],(2,2)))
+    eig_approx,_ = np.linalg.eig(M)
+
+    print('    correct eigenvalues:', eig_correct)
+    print('approximate eigenvalues:', eig_approx)
+
+    M = M.flatten()
+    plt.subplot(1,2,1)
+    plt.plot(var_sol['t'],var_sol['y'][0],'k')
+    plt.plot(var_env['t'],var_env['y'][0],'ro')
+    plt.subplot(1,2,2)
+    plt.plot(t_span_var,[0,0],'b')
+    plt.plot(var_sol['t'],var_sol['y'][2],'k')
+    plt.plot(var_env['t'],var_env['y'][2],'ro')
+    plt.show()
+
+
 def main():
     #autonomous()
     #forced_polar()
     #forced()
-    hr()
+    #hr()
+    variational()
 
 
 if __name__ == '__main__':
