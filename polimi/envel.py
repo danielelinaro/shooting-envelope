@@ -543,40 +543,55 @@ def hr():
     plt.show()
 
 
+def variational_system(fun, jac, t, y, T):
+    N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
+    J = jac(t,y[:N])
+    phi = np.reshape(y[N:N+N**2],(N,N))
+    return np.concatenate((T * fun(t*T, y[:N]), \
+                           T * np.matmul(J,phi).flatten()))
+
+
+def envelope_with_variational(fun, jac, T, y0, t_span=[0,1], rtol=1e-1
+                              atol=1e-2, EnvSolver=TrapEnvelope, vars_to_use=None):
+    N = len(y0)
+    T_large = max(T)
+    T_small = min(T)
+    var_fun = lambda t,y: variational_system(fun, jac, t, y, T_large)
+    y0_var = np.concatenate((y0,np.eye(N).flatten()))
+
+    if np.isscalar(atol):
+        atol += np.zeros(N)
+    if len(atol) == N:
+        atol = np.concatenate((atol,1e-2+np.zeros(N**2)))
+
+    if vars_to_use is None:
+        vars_to_use = np.arange(N)
+
+    solver = EnvSolver(var_fun, t_span, y0_var, T_guess=None,
+                       T=T_small/T_large, jac=jac, rtol=rtol, atol=atol,
+                       vars_to_use=vars_to_use, is_variational=True)
+
+    return solver.solve()
+
+
 def variational():
     from systems import vdp, vdp_jac
     import matplotlib.pyplot as plt
 
-    def variational_system(fun, jac, t, y, T):
-        N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
-        J = jac(t,y[:N])
-        phi = np.reshape(y[N:N+N**2],(N,N))
-        return np.concatenate((T * fun(t*T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
-
     epsilon = 1e-3
     A = [10,1]
     T = [4,400]
-    T_large = max(T)
-    T_small = min(T)
     fun = lambda t,y: vdp(t,y,epsilon,A,T)
     jac = lambda t,y: vdp_jac(t,y,epsilon)
-    var_fun = lambda t,y: variational_system(fun, jac, t, y, T_large)
+    var_fun = lambda t,y: variational_system(fun, jac, t, y, max(T))
 
     t_span_var = [0,1]
     y0 = np.array([-5.8133754 ,  0.13476983])
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
-    atol = [1e-2,1e-2,1e-6,1e-6,1e-6,1e-6]
     sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
-    be_solver = BEEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
-                           max_step=10, jac=jac, rtol=1e-1, atol=atol,
-                           vars_to_use=[0,1], is_variational=True)
-    trap_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None, T=T_small/T_large,
-                               max_step=10, jac=jac, rtol=1e-1, atol=atol,
-                               vars_to_use=[0,1], is_variational=True)
-    sol_be = be_solver.solve()
-    sol_trap = trap_solver.solve()
+    sol_be   = envelope_with_variational(fun, jac, T, y0, EnvSolver=BEEnvelope)
+    sol_trap = envelope_with_variational(fun, jac, T, y0, EnvSolver=TrapEnvelope)
 
     eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
     print('         correct eigenvalues:', eig)
