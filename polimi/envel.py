@@ -390,6 +390,63 @@ class TrapEnvelope (EnvelopeSolver):
         return EnvelopeSolver.SUCCESS
 
 
+class VariationalEnvelope (object):
+
+    def _variational_system(self, t, y):
+        N = self.N
+        T = self.T_large
+        J = self.jac(t,y[:N])
+        phi = np.reshape(y[N:N+N**2],(N,N))
+        return np.concatenate((T * self.fun(t*T, y[:N]), \
+                               T * np.matmul(J,phi).flatten()))
+
+
+    def __init__(self, fun, jac, y0, T_large, T_small, t_span=[0,1], rtol=1e-1, atol=1e-2,
+                 vars_to_use=[], EnvSolver=TrapEnvelope, **kwargs):
+
+        try:
+            if kwargs['is_variational']:
+                print('Ignoring "is_variational" argument.')
+            else:
+                print('is_variational is set to False: this does not make sense. Ignoring it.')
+        except:
+            pass
+
+        if T_small is None or T_small < 0:
+            raise ValueError('T_small cannot be None or negative')
+
+        if T_large is None or T_large < 0:
+            raise ValueError('T_large cannot be None or negative')
+
+        if 'T_guess' in kwargs:
+            print('Ignoring "T_guess" argument.')
+
+        self.N = len(y0)
+        self.fun = fun
+        self.jac = jac
+        self.T_large = T_large
+
+        y0_var = np.concatenate((y0,np.eye(self.N).flatten()))
+
+        if np.isscalar(atol):
+            atol += np.zeros(self.N)
+        if len(atol) == self.N:
+            atol = np.concatenate((atol,1e-2+np.zeros(self.N**2)))
+
+        if len(vars_to_use) == 0 or vars_to_use is None:
+            vars_to_use = np.arange(self.N)
+
+        self.solver = EnvSolver(self._variational_system, t_span, y0_var,
+                                T_guess=None, T=T_small/T_large, jac=jac,
+                                rtol=rtol, atol=atol,
+                                vars_to_use=vars_to_use,
+                                is_variational=True,
+                                **kwargs)
+
+    def solve(self):
+        return self.solver.solve()
+
+
 # for saving data
 pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=1)
 
@@ -543,64 +600,6 @@ def hr():
     plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
     plt.plot(sol_trap['t'],sol_trap['T'],'ms-')
     plt.show()
-
-
-class VariationalEnvelope (object):
-
-    def _variational_system(self, t, y):
-        N = self.N
-        T = self.T_large
-        J = self.jac(t,y[:N])
-        phi = np.reshape(y[N:N+N**2],(N,N))
-        return np.concatenate((T * self.fun(t*T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
-
-
-    def __init__(self, fun, jac, y0, T_large, T_small, t_span=[0,1], rtol=1e-1, atol=1e-2,
-                 vars_to_use=[], EnvSolver=TrapEnvelope, **kwargs):
-
-        try:
-            if kwargs['is_variational']:
-                print('Ignoring "is_variational" argument.')
-            else:
-                print('is_variational is set to False: this does not make sense. Ignoring it.')
-        except:
-            pass
-
-        if T_small is None or T_small < 0:
-            raise ValueError('T_small cannot be None or negative')
-
-        if T_large is None or T_large < 0:
-            raise ValueError('T_large cannot be None or negative')
-
-        if 'T_guess' in kwargs:
-            print('Ignoring "T_guess" argument.')
-
-        self.N = len(y0)
-        self.fun = fun
-        self.jac = jac
-        self.T_large = T_large
-
-        y0_var = np.concatenate((y0,np.eye(self.N).flatten()))
-
-        if np.isscalar(atol):
-            atol += np.zeros(self.N)
-        if len(atol) == self.N:
-            atol = np.concatenate((atol,1e-2+np.zeros(self.N**2)))
-
-        if len(vars_to_use) == 0 or vars_to_use is None:
-            vars_to_use = np.arange(self.N)
-
-        self.solver = EnvSolver(self._variational_system, t_span, y0_var,
-                                T_guess=None, T=T_small/T_large, jac=jac,
-                                rtol=rtol, atol=atol,
-                                vars_to_use=vars_to_use,
-                                is_variational=True,
-                                **kwargs)
-
-    def solve(self):
-        return self.solver.solve()
-
 
 
 def variational():
