@@ -68,14 +68,16 @@ class EnvelopeSolver (object):
             self.vars_to_use = np.arange(self.n_dim)
         else:
             self.vars_to_use = vars_to_use
-        print('Variables to use: {}.'.format(self.vars_to_use))
+        if DEBUG:
+            print('Variables to use: {}.'.format(self.vars_to_use))
         self.is_variational = is_variational
         if is_variational:
             self.mono_mat = []
             # the number of dimensions of the original system, i.e. the one
             # without the variational part added
             self.N = int((-1 + np.sqrt(1 + 4*self.n_dim)) / 2)
-            print('The number of dimensions of the original system is %d.' % self.N)
+            if DEBUG:
+                print('The number of dimensions of the original system is %d.' % self.N)
         if T is not None:
             self.estimate_T = False
             self.T = T
@@ -129,7 +131,9 @@ class EnvelopeSolver (object):
                 print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f - %s' % (self.t[-1],self.T,self.H,msg))
 
         idx, = np.where(self.t <= self.t_span[1] + self.T/2)
-        sol = {'t': self.t[idx], 'y': self.y[:,idx], 'T': np.array([self.period[i] for i in idx])}
+        sol = {'t': self.t[idx], 'y': self.y[:,idx],
+               'T': np.array([self.period[i] for i in idx]),
+               'period_eval': self.original_fun_period_eval}
         if self.is_variational:
             sol['M'] = [self.mono_mat[i] for i in idx[:-1]]
             for i,mat in enumerate(sol['M']):
