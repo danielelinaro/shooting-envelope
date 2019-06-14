@@ -80,10 +80,12 @@ class EnvelopeSolver (object):
             self.estimate_T = False
             self.T = T
             self.f[:,0] = self._envelope_fun(self.t[0],self.y[:,0])
-        else:
+        elif T_guess is not None:
             self.estimate_T = True
             self.f[:,0] = self._envelope_fun(self.t[0],self.y[:,0],T_guess)
             self.T = self.T_new
+        else:
+            raise Exception('T_guess and T cannot both be None')
         self.H = self.T
         self.period = [self.T]
         if DEBUG:
@@ -184,10 +186,10 @@ class EnvelopeSolver (object):
         # find the equation of the plane containing y and
         # orthogonal to fun(t,y)
         f = self.original_fun(t,y)
-        w = f/np.linalg.norm(f)
-        b = -np.dot(w[self.vars_to_use],y[self.vars_to_use])
+        w = f[self.vars_to_use] / np.linalg.norm(f[self.vars_to_use])
+        b = -np.dot(w, y[self.vars_to_use])
 
-        events_fun = lambda t,y: np.dot(w[self.vars_to_use],y[self.vars_to_use]) + b
+        events_fun = lambda t,y: np.dot(w, y[self.vars_to_use]) + b
         events_fun.direction = 1
 
         if self.original_fun_method == 'BDF':
@@ -543,55 +545,99 @@ def hr():
     plt.show()
 
 
-def variational_system(fun, jac, t, y, T):
-    N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
-    J = jac(t,y[:N])
-    phi = np.reshape(y[N:N+N**2],(N,N))
-    return np.concatenate((T * fun(t*T, y[:N]), \
-                           T * np.matmul(J,phi).flatten()))
+class VariationalEnvelope (object):
+
+    def _variational_system(self, t, y):
+        N = self.N
+        T = self.T_large
+        J = self.jac(t,y[:N])
+        phi = np.reshape(y[N:N+N**2],(N,N))
+        return np.concatenate((T * self.fun(t*T, y[:N]), \
+                               T * np.matmul(J,phi).flatten()))
 
 
-def envelope_with_variational(fun, jac, T, y0, t_span=[0,1], rtol=1e-1
-                              atol=1e-2, EnvSolver=TrapEnvelope, vars_to_use=None):
-    N = len(y0)
-    T_large = max(T)
-    T_small = min(T)
-    var_fun = lambda t,y: variational_system(fun, jac, t, y, T_large)
-    y0_var = np.concatenate((y0,np.eye(N).flatten()))
+    def __init__(self, fun, jac, y0, T_large, T_small, t_span=[0,1], rtol=1e-1, atol=1e-2,
+                 vars_to_use=[], EnvSolver=TrapEnvelope, **kwargs):
 
-    if np.isscalar(atol):
-        atol += np.zeros(N)
-    if len(atol) == N:
-        atol = np.concatenate((atol,1e-2+np.zeros(N**2)))
+        try:
+            if kwargs['is_variational']:
+                print('Ignoring "is_variational" argument.')
+            else:
+                print('is_variational is set to False: this does not make sense. Ignoring it.')
+        except:
+            pass
 
-    if vars_to_use is None:
-        vars_to_use = np.arange(N)
+        if T_small is None or T_small < 0:
+            raise ValueError('T_small cannot be None or negative')
 
-    solver = EnvSolver(var_fun, t_span, y0_var, T_guess=None,
-                       T=T_small/T_large, jac=jac, rtol=rtol, atol=atol,
-                       vars_to_use=vars_to_use, is_variational=True)
+        if T_large is None or T_large < 0:
+            raise ValueError('T_large cannot be None or negative')
 
-    return solver.solve()
+        if 'T_guess' in kwargs:
+            print('Ignoring "T_guess" argument.')
+
+        self.N = len(y0)
+        self.fun = fun
+        self.jac = jac
+        self.T_large = T_large
+
+        y0_var = np.concatenate((y0,np.eye(self.N).flatten()))
+
+        if np.isscalar(atol):
+            atol += np.zeros(self.N)
+        if len(atol) == self.N:
+            atol = np.concatenate((atol,1e-2+np.zeros(self.N**2)))
+
+        if len(vars_to_use) == 0 or vars_to_use is None:
+            vars_to_use = np.arange(self.N)
+
+        self.solver = EnvSolver(self._variational_system, t_span, y0_var,
+                                T_guess=None, T=T_small/T_large, jac=jac,
+                                rtol=rtol, atol=atol,
+                                vars_to_use=vars_to_use,
+                                is_variational=True,
+                                **kwargs)
+
+    def solve(self):
+        return self.solver.solve()
+
 
 
 def variational():
     from systems import vdp, vdp_jac
     import matplotlib.pyplot as plt
 
+    def variational_system(fun, jac, t, y, T):
+        N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
+        J = jac(t,y[:N])
+        phi = np.reshape(y[N:N+N**2],(N,N))
+        return np.concatenate((T * fun(t*T, y[:N]), \
+                               T * np.matmul(J,phi).flatten()))
+
     epsilon = 1e-3
     A = [10,1]
     T = [4,400]
+    T_large = max(T)
+    T_small = min(T)
+    T_small_guess = min(T) * 0.95
     fun = lambda t,y: vdp(t,y,epsilon,A,T)
     jac = lambda t,y: vdp_jac(t,y,epsilon)
-    var_fun = lambda t,y: variational_system(fun, jac, t, y, max(T))
+    var_fun = lambda t,y: variational_system(fun, jac, t, y, T_large)
 
     t_span_var = [0,1]
     y0 = np.array([-5.8133754 ,  0.13476983])
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
     sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
-    sol_be   = envelope_with_variational(fun, jac, T, y0, EnvSolver=BEEnvelope)
-    sol_trap = envelope_with_variational(fun, jac, T, y0, EnvSolver=TrapEnvelope)
+
+    be_solver = VariationalEnvelope(fun, jac, y0, T_large, T_small,
+                                    rtol=1e-1, atol=1e-2,
+                                    EnvSolver=BEEnvelope)
+    trap_solver = VariationalEnvelope(fun, jac, y0, T_large, T_small,
+                                      rtol=1e-1, atol=1e-2,
+                                      EnvSolver=TrapEnvelope)
+    sol_be = be_solver.solve()
+    sol_trap = trap_solver.solve()
 
     eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
     print('         correct eigenvalues:', eig)
