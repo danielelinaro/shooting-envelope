@@ -1,9 +1,13 @@
 
+
+__all__ = ['BaseShooting', 'Shooting', 'EnvelopeShooting']
+
+
 import numpy as np
 from numpy.linalg import solve
 from scipy.integrate import solve_ivp
-from . import common
 from . import envelope
+#from envelope import common
 
 
 class BaseShooting (object):
@@ -20,7 +24,7 @@ class BaseShooting (object):
             self.jac_factor = None
             def jac(t,y):
                 f = self.fun(t,y)
-                J,self.jac_factor = common.num_jac(self.fun, t, y, f, self.atol, self.jac_factor, None)
+                J,self.jac_factor = envelope.num_jac(self.fun, t, y, f, self.atol, self.jac_factor, None)
                 return J
         self.jac = jac
 

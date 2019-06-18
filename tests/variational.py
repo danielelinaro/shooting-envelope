@@ -3,10 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-from polimi.envel import TrapEnvelope, BEEnvelope, EnvelopeInterp
-from polimi.systems import vdp, vdp_jac
-
-import ipdb
+from polimi.envelope import TrapEnvelope, BEEnvelope, EnvelopeInterp
+from polimi import vdp, vdp_jac
 
 
 def variational_system(fun, jac, t, y, T):
@@ -81,20 +79,18 @@ def variational_vdp():
 
     atol = [1e-2,1e-2,1e-6,1e-6,1e-6,1e-6]
     var_sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
-    #var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None,
-    #                                   T=T_small/T_large, rtol=1e-1, atol=atol,
-    #                                   vars_to_use=[0,1])
-    #var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=T_small/T_large*2,
-    #                                   rtol=1e-1, atol=atol, vars_to_use=[2,3,4,5])
-    #var_env = var_envelope_solver.solve()
+    var_envelope_solver = TrapEnvelope(var_fun, t_span_var, y0_var, T_guess=None,
+                                       T=T_small/T_large, rtol=1e-1, atol=atol,
+                                       vars_to_use=[0,1])
+    var_env = var_envelope_solver.solve()
 
     plt.subplot(1,2,1)
     plt.plot(var_sol['t'],var_sol['y'][0],'k')
-    #plt.plot(var_env['t'],var_env['y'][0],'ro')
+    plt.plot(var_env['t'],var_env['y'][0],'ro')
     plt.subplot(1,2,2)
     plt.plot(t_span_var,[0,0],'b')
     plt.plot(var_sol['t'],var_sol['y'][2],'k')
-    #plt.plot(var_env['t'],var_env['y'][2],'ro')
+    plt.plot(var_env['t'],var_env['y'][2],'ro')
 
     x = var_sol['sol'](T_small/T_large)[2:]
     M = np.reshape(x,(2,2))
@@ -226,6 +222,7 @@ def hybrid():
     plt.plot(var_sol['t'],var_sol['y'][0],'k')
     plt.plot(var_env['t'],var_env['y'][0],'ro')
     plt.show()
+
 
 if __name__ == '__main__':
     variational_vdp()

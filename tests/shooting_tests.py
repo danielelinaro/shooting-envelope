@@ -155,11 +155,11 @@ def forced_two_frequencies_comparison():
 
 
 def main():
-    #normalized()
-    #autonomous()
-    #forced()
-    #forced_two_frequencies()
-    #forced_two_frequencies_envelope()
+    normalized()
+    autonomous()
+    forced()
+    forced_two_frequencies()
+    forced_two_frequencies_envelope()
     forced_two_frequencies_comparison()
 
 

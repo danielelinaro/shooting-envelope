@@ -1,8 +1,11 @@
+
+
+__all__ = ['_one_period', '_envelope_system']
+
+
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from .rk import RK23Envelope, RK45Envelope
-from .bdf import BDFEnvelope
 
 #############################################################################
 ############################## HELPER FUNCTIONS #############################
@@ -33,8 +36,6 @@ def _one_period(t,y,fun,T_guess,method='RK45',**options):
     # compute the "vector field" of the envelope
     G = 1./T * (sol_b['sol'](t+T) - sol_a['sol'](t))
 
-    #print('_one_period> T({}) = {} s (guess = {} s).'.format(t,T,T_guess))
-    
     return G
 
 

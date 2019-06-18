@@ -9,6 +9,9 @@ DEBUG = True
 VERBOSE_DEBUG = False
 
 
+__all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope', 'VariationalEnvelope', 'EnvelopeInterp']
+
+
 class EnvelopeInterp (object):
 
     def __init__(self, fun, sol, T):

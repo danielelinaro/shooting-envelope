@@ -1,4 +1,6 @@
 
+__all__ = ['vdp', 'vdp_jac', 'vdp_extrema', 'vdp_auto', 'hr']
+
 import numpy as np
 
 def jacobian_finite_differences(fun,t,y):
