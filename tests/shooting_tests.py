@@ -98,6 +98,7 @@ def forced_two_frequencies(A=[10,1], T=[4,400], y0_guess=[-2,0], do_plot=True, a
 
 def forced_two_frequencies_envelope(A=[10,1], T=[4,400], y0_guess=[-2,0], do_plot=True, ax=None):
     from polimi.systems import vdp, vdp_jac
+    from polimi.envelope import BEEnvelope, TrapEnvelope
     estimate_T = False
     epsilon = 1e-3
     T_small = np.min(T)
@@ -107,7 +108,7 @@ def forced_two_frequencies_envelope(A=[10,1], T=[4,400], y0_guess=[-2,0], do_plo
     shoot = EnvelopeShooting(lambda t,y: vdp(t,y,epsilon,A,T),
                              N, T_large, estimate_T, T_small,
                              lambda t,y: vdp_jac(t,y,epsilon),
-                             shooting_tol=1e-3,
+                             shooting_tol=1e-3, env_solver=BEEnvelope,
                              env_rtol=1e-2, env_atol=1e-3,
                              fun_rtol=1e-8, fun_atol=1e-10, ax=ax)
 

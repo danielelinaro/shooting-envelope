@@ -268,7 +268,14 @@ class BEEnvelope (EnvelopeSolver):
             y_extrap = y_cur + H * f_cur
             # correct the estimate using implicit Euler
             #y_next = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, xtol=1e-1)
-            y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, f_tol=1e-3)
+            if self.is_variational and hasattr(self, '_reduced_fun'):
+                y_next = np.zeros(self.n_dim)
+                y_next[:self.N] = newton_krylov(lambda Y: Y - y_cur[:self.N] - \
+                                                H * self._reduced_fun(t_next,Y), \
+                                                y_extrap[:self.N], f_tol=1e-3)
+            else:
+                y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), \
+                                       y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
@@ -354,7 +361,15 @@ class TrapEnvelope (EnvelopeSolver):
             y_extrap = y_cur + H * f_cur
             # correct the estimate using the trapezoidal rule
             #y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-1)
-            y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, f_tol=1e-3)
+            if self.is_variational and hasattr(self, '_reduced_fun'):
+                y_next = np.zeros(self.n_dim)
+                y_next[:self.N] = newton_krylov(lambda Y: Y - y_cur[:self.N] - H/2 * \
+                                                (f_cur[:self.N] + self._reduced_fun(t_next,Y)), \
+                                                y_extrap[:self.N], f_tol=1e-3)
+            else:
+                y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * \
+                                       (f_cur + self._envelope_fun(t_next,Y)), \
+                                       y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
@@ -407,7 +422,7 @@ class VariationalEnvelope (object):
 
 
     def __init__(self, fun, jac, y0, T_large, T_small, t_span=[0,1], rtol=1e-1, atol=1e-2,
-                 vars_to_use=[], EnvSolver=TrapEnvelope, **kwargs):
+                 vars_to_use=[], env_solver=TrapEnvelope, **kwargs):
 
         try:
             if kwargs['is_variational']:
@@ -441,12 +456,17 @@ class VariationalEnvelope (object):
         if len(vars_to_use) == 0 or vars_to_use is None:
             vars_to_use = np.arange(self.N)
 
-        self.solver = EnvSolver(self._variational_system, t_span, y0_var,
-                                T_guess=None, T=T_small/T_large, jac=jac,
-                                rtol=rtol, atol=atol,
-                                vars_to_use=vars_to_use,
-                                is_variational=True,
-                                **kwargs)
+        self.variational_solver = env_solver(self._variational_system, t_span, y0_var,
+                                             T_guess=None, T=T_small/T_large, jac=jac,
+                                             rtol=rtol, atol=atol,
+                                             vars_to_use=vars_to_use,
+                                             is_variational=True,
+                                             **kwargs)
+
+        self.envelope_solver = EnvelopeSolver(lambda t,y: T_large*fun(t*T_large,y),
+                                              t_span, y0, T_guess=None, T=T_small/T_large)
+        self.variational_solver._reduced_fun = self.envelope_solver._envelope_fun
+
 
     def solve(self):
-        return self.solver.solve()
+        return self.variational_solver.solve()

@@ -124,7 +124,7 @@ class Shooting (BaseShooting):
 class EnvelopeShooting (BaseShooting):
 
     def __init__(self, fun, N, T, estimate_T, small_T, jac=None, shooting_tol=1e-3,
-                 env_rtol=1e-1, env_atol=1e-3, fun_rtol=1e-5, fun_atol=1e-7, EnvSolver=None, ax=None):
+                 env_rtol=1e-1, env_atol=1e-3, fun_rtol=1e-5, fun_atol=1e-7, env_solver=None, ax=None):
         super(EnvelopeShooting, self).__init__(fun, N, T, estimate_T, jac,
                                                shooting_tol, fun_rtol, fun_atol, ax)
         self.T_large = T
@@ -132,11 +132,11 @@ class EnvelopeShooting (BaseShooting):
         self.env_rtol = env_rtol
         self.env_atol = env_atol
 
-        self.EnvSolver = EnvSolver
-        if self.EnvSolver is None:
-            self.EnvSolver = envelope.TrapEnvelope
+        self.env_solver = env_solver
+        if self.env_solver is None:
+            self.env_solver = envelope.TrapEnvelope
 
-        if self.EnvSolver == envelope.BEEnvelope:
+        if self.env_solver == envelope.BEEnvelope:
             self.plot_str = 'r.'
         else:
             self.plot_str = 'g.'
@@ -146,5 +146,5 @@ class EnvelopeShooting (BaseShooting):
         solver = envelope.VariationalEnvelope(self.fun, self.jac, y0[:self.N],
                                               self.T_large, self.T_small,
                                               rtol=self.env_rtol, atol=self.env_atol,
-                                              EnvSolver=self.EnvSolver)
+                                              env_solver=self.env_solver)
         return solver.solve()

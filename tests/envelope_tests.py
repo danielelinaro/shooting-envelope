@@ -1,5 +1,5 @@
 
-import numpy as npi
+import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 from polimi.envelope import BEEnvelope, TrapEnvelope, VariationalEnvelope
@@ -185,10 +185,10 @@ def variational():
 
     be_solver = VariationalEnvelope(fun, jac, y0, T_large, T_small,
                                     rtol=1e-1, atol=1e-2,
-                                    EnvSolver=BEEnvelope)
+                                    env_solver=BEEnvelope)
     trap_solver = VariationalEnvelope(fun, jac, y0, T_large, T_small,
                                       rtol=1e-1, atol=1e-2,
-                                      EnvSolver=TrapEnvelope)
+                                      env_solver=TrapEnvelope)
     sol_be = be_solver.solve()
     sol_trap = trap_solver.solve()
 
