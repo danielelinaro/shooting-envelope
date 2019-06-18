@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,6 +6,7 @@ from polimi.systems import vdp, vdp_jac, vdp_extrema, vdp_auto
 from polimi.envelope import RK45Envelope, BDFEnvelope, _envelope_system, _one_period
 import sys
 import os
+
 
 def autonomous_vdp():
     epsilon = 0.001
@@ -64,6 +64,7 @@ def autonomous_vdp():
     plt.ylabel('x')
     plt.legend(loc='best')
     plt.show()
+
 
 def forced_vdp():
     epsilon = 0.001
@@ -169,6 +170,7 @@ def main():
         forced_vdp()
     else:
         print('{}: unknown method: `{}`.'.format(os.path.basename(sys.argv[0]),sys.argv[1]))
+
 
 if __name__ == '__main__':
     main()
