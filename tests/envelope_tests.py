@@ -178,15 +178,20 @@ def variational():
     var_fun = lambda t,y: variational_system(fun, jac, t, y, T_large)
 
     t_span_var = [0,1]
-    y0 = np.array([-5.8133754 ,  0.13476983])
+    if A[0] == 10:
+        y0 = np.array([-5.8133754, 0.13476983])
+    elif A[0] == 1:
+        y0 = np.array([9.32886314, 0.109778919])
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
     sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-8, atol=1e-10, dense_output=True)
 
+    rtol = 1e-1
+    atol = 1e-2
     be_var_solver = BEEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                                 rtol=1e-1, atol=1e-2, is_variational=True)
+                                 rtol=rtol, atol=atol, is_variational=True)
     trap_var_solver = TrapEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                                   rtol=1e-1, atol=1e-2, is_variational=True)
+                                   rtol=rtol, atol=atol, is_variational=True)
     print('----------------------------------------------------------------')
     var_sol_be = be_var_solver.solve()
     print('----------------------------------------------------------------')
