@@ -9,7 +9,7 @@ DEBUG = True
 VERBOSE_DEBUG = False
 
 
-__all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope', 'VariationalEnvelope', 'EnvelopeInterp']
+__all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope', 'EnvelopeInterp']
 
 
 class EnvelopeInterp (object):
@@ -51,48 +51,74 @@ class EnvelopeSolver (object):
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
                  vars_to_use=[], is_variational=False):
-        self.dTtol = dTtol
-        self.max_step = np.floor(max_step)
-        self.rtol, self.atol = rtol, atol
+
+        # number of dimensions of the system
         self.n_dim = len(y0)
+        # tolerances for the computation of the envelope
+        self.rtol, self.atol = rtol, atol
+        # tolerances for the integration of the "fast" system
         self.original_fun_rtol, self.original_fun_atol = fun_rtol, fun_atol
-        self.original_fun = fun
-        self.original_jac = jac
+        # tolerance on the variation of the estimated period
+        self.dTtol = dTtol
+        # max_step is in units of periods
+        self.max_step = np.floor(max_step)
+
+        # whether to compute the envelope of the variational system
+        self.is_variational = is_variational
+        
+        if not self.is_variational:
+            self.original_fun = fun
+            self.original_jac = jac
+            self.t_span = t_span
+        else:
+            if T is None:
+                raise Exception('T cannot be None if is_variational is True')
+            if jac is None:
+                raise Exception('jac cannot be None if is_variational is True')
+            T /= t_span[1]
+            self.T_large = t_span[1]
+            self.T_small = T
+            self.t_span = [0,1]
+            self.original_fun = lambda t,y: self.T_large * fun(t*self.T_large, y)
+            self.original_jac = lambda t,y: jac(t*self.T_large, y)
+            self.mono_mat = []
+
         self.original_jac_sparsity = jac_sparsity
         self.original_fun_vectorized = vectorized
         self.original_fun_method = fun_method
+
+        # how many period of the fast system have been integrated
         self.original_fun_period_eval = 0
-        self.t_span = t_span
+
+        # initial condition
         self.y0 = np.array(y0)
+        
         self.t = np.array([t_span[0]])
         self.y = np.zeros((self.n_dim,1))
         self.y[:,0] = self.y0
         self.f = np.zeros((self.n_dim,1))
-        if len(vars_to_use) == 0:
+
+        # indexes of the variables to use for the computation of the period
+        if len(vars_to_use) == 0 or vars_to_use is None:
             self.vars_to_use = np.arange(self.n_dim)
         else:
             self.vars_to_use = vars_to_use
-        if DEBUG:
-            print('Variables to use: {}.'.format(self.vars_to_use))
-        self.is_variational = is_variational
-        if is_variational:
-            self.mono_mat = []
-            # the number of dimensions of the original system, i.e. the one
-            # without the variational part added
-            self.N = int((-1 + np.sqrt(1 + 4*self.n_dim)) / 2)
-            if DEBUG:
-                print('The number of dimensions of the original system is %d.' % self.N)
+
         if T is not None:
             self.estimate_T = False
             self.T = T
-            self.f[:,0] = self._envelope_fun(self.t[0],self.y[:,0])
+            self.f[:,0] = self._envelope_fun(self.t[0], self.y[:,0])
         elif T_guess is not None:
             self.estimate_T = True
-            self.f[:,0] = self._envelope_fun(self.t[0],self.y[:,0],T_guess)
+            self.f[:,0] = self._envelope_fun(self.t[0], self.y[:,0], T_guess)
             self.T = self.T_new
         else:
             raise Exception('T_guess and T cannot both be None')
+
+        # initial integration step for the envelope
         self.H = self.T
+
+        # period of the fast system during the envelope integration
         self.period = [self.T]
         if DEBUG:
             print('EnvelopeSolver.__init__(%.3f)> T = %.6f' % (self.t_span[0],self.T))
@@ -140,8 +166,12 @@ class EnvelopeSolver (object):
                'period_eval': self.original_fun_period_eval}
         if self.is_variational:
             sol['M'] = [self.mono_mat[i] for i in idx[:-1]]
+            sol['y'] = np.zeros((self.n_dim+self.n_dim**2, len(idx)))
+            sol['y'][:self.n_dim,:] = self.y[:,idx]
+            sol['y'][self.n_dim:,0] = np.eye(self.n_dim).flatten()
             for i,mat in enumerate(sol['M']):
-                sol['y'][2:,i+1] = np.dot(np.reshape(sol['y'][2:,i],(self.N,self.N)), mat).flatten()
+                sol['y'][self.n_dim:,i+1] = np.dot(np.reshape(sol['y'][self.n_dim:,i],\
+                                                              (self.n_dim,self.n_dim)), mat).flatten()
 
         return sol
 
@@ -151,13 +181,12 @@ class EnvelopeSolver (object):
 
 
     def _one_period_step(self):
+        if self.is_variational:
+            M = self._compute_monodromy_matrix(self.t[-1],self.y[:,-1])
+            self.mono_mat.append(M)
         self._envelope_fun(self.t[-1],self.y[:,-1])
         self.t = np.append(self.t,self.t_new)
         self.y = np.append(self.y,np.reshape(self.y_new,(self.n_dim,1)),axis=1)
-        if self.is_variational:
-            M = np.reshape(self.y_new[self.N:],(self.N,self.N)).copy()
-            self.mono_mat.append(M)
-            self.y[self.N:,-1] = np.eye(self.N).flatten()
         self.f = np.append(self.f,np.reshape(self._envelope_fun(self.t[-1],self.y[:,-1]),(self.n_dim,1)),axis=1)
         if self.estimate_T:
             self.T = self.T_new
@@ -230,6 +259,23 @@ class EnvelopeSolver (object):
         return 1./self.T_new * (self.y_new - sol['sol'](t))
 
 
+    def _variational_system(self, t, y):
+        N = self.n_dim
+        T = self.T_large
+        J = self.original_jac(t,y[:N])
+        phi = np.reshape(y[N:N+N**2],(N,N))
+        return np.concatenate((self.original_fun(t, y[:N]), \
+                               T * np.matmul(J,phi).flatten()))
+
+
+    def _compute_monodromy_matrix(self, t0, y0):
+        # compute the monodromy matrix by integrating the variational system
+        sol = solve_ivp(self._variational_system, [t0,t0+self.T],
+                        np.concatenate((y0,np.eye(self.n_dim).flatten())),
+                        rtol=self.original_fun_rtol, atol=self.original_fun_atol)
+        return np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
+
+
 class BEEnvelope (EnvelopeSolver):
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
@@ -255,13 +301,8 @@ class BEEnvelope (EnvelopeSolver):
         # step size in units of period
         n_periods = int(np.round(H / self.T))
 
-        # which variables to consider when deciding whether to accept or not the
-        # step based on the LTE
-        vars_to_use = np.arange(self.n_dim)
         if self.is_variational:
-            # monodromy matrix
-            M = np.reshape(self.y_new[self.N:],(self.N,self.N)).copy()
-            vars_to_use = self.vars_to_use
+            M = self._compute_monodromy_matrix(t_cur, y_cur)
 
         if n_periods == 1:
             # the step is equal to the period: we don't need to solve the implicit system
@@ -271,20 +312,10 @@ class BEEnvelope (EnvelopeSolver):
             y_extrap = y_cur + H * f_cur
             # correct the estimate using implicit Euler
             #y_next = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, xtol=1e-1)
-            if self.is_variational and hasattr(self, '_reduced_fun'):
-                y_next = np.zeros(self.n_dim)
-                y_next[:self.N] = newton_krylov(lambda Y: Y - y_cur[:self.N] - \
-                                                H * self._reduced_fun(t_next,Y), \
-                                                y_extrap[:self.N], f_tol=1e-3)
-            else:
-                y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), \
-                                       y_extrap, f_tol=1e-3)
+            y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
-
-        if self.is_variational:
-            y_next[self.N:] = np.eye(self.N).flatten()
 
         # the value of the derivative at the new point
         f_next = self._envelope_fun(t_next,y_next)
@@ -301,9 +332,9 @@ class BEEnvelope (EnvelopeSolver):
             T = self.T
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale[vars_to_use]/coeff[vars_to_use])) / T))) * T
+        self.H_new = np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
 
-        if np.any(lte[vars_to_use] > scale[vars_to_use]):
+        if np.any(lte > scale):
             return EnvelopeSolver.LTE_TOO_LARGE
 
         if self.is_variational:
@@ -348,13 +379,8 @@ class TrapEnvelope (EnvelopeSolver):
         # step size in units of period
         n_periods = int(np.round(H / self.T))
 
-        # which variables to consider when deciding whether to accept or not the
-        # step based on the LTE
-        vars_to_use = np.arange(self.n_dim)
         if self.is_variational:
-            # monodromy matrix
-            M = np.reshape(self.y_new[self.N:],(self.N,self.N)).copy()
-            vars_to_use = self.vars_to_use
+            M = self._compute_monodromy_matrix(t_cur, y_cur)
 
         if n_periods == 1:
             # the step is equal to the period: we don't need to solve the implicit system
@@ -364,21 +390,11 @@ class TrapEnvelope (EnvelopeSolver):
             y_extrap = y_cur + H * f_cur
             # correct the estimate using the trapezoidal rule
             #y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-1)
-            if self.is_variational and hasattr(self, '_reduced_fun'):
-                y_next = np.zeros(self.n_dim)
-                y_next[:self.N] = newton_krylov(lambda Y: Y - y_cur[:self.N] - H/2 * \
-                                                (f_cur[:self.N] + self._reduced_fun(t_next,Y)), \
-                                                y_extrap[:self.N], f_tol=1e-3)
-            else:
-                y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * \
-                                       (f_cur + self._envelope_fun(t_next,Y)), \
-                                       y_extrap, f_tol=1e-3)
+            y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)),
+                                   y_extrap, f_tol=1e-3)
 
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
-
-        if self.is_variational:
-            y_next[self.N:] = np.eye(self.N).flatten()
 
         # the value of the derivative at the new point
         f_next = self._envelope_fun(t_next,y_next)
@@ -397,9 +413,9 @@ class TrapEnvelope (EnvelopeSolver):
             T = self.T
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale[vars_to_use]/coeff[vars_to_use])**(1/3)) / T))) * T
+        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
 
-        if np.any(lte[vars_to_use] > scale[vars_to_use]):
+        if np.any(lte > scale):
             return EnvelopeSolver.LTE_TOO_LARGE
 
         if self.is_variational:
@@ -412,64 +428,3 @@ class TrapEnvelope (EnvelopeSolver):
 
         return EnvelopeSolver.SUCCESS
 
-
-class VariationalEnvelope (object):
-
-    def _variational_system(self, t, y):
-        N = self.N
-        T = self.T_large
-        J = self.jac(t,y[:N])
-        phi = np.reshape(y[N:N+N**2],(N,N))
-        return np.concatenate((T * self.fun(t*T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
-
-
-    def __init__(self, fun, jac, y0, T_large, T_small, t_span=[0,1], rtol=1e-1, atol=1e-2,
-                 vars_to_use=[], env_solver=TrapEnvelope, **kwargs):
-
-        try:
-            if kwargs['is_variational']:
-                print('Ignoring "is_variational" argument.')
-            else:
-                print('is_variational is set to False: this does not make sense. Ignoring it.')
-        except:
-            pass
-
-        if T_small is None or T_small < 0:
-            raise ValueError('T_small cannot be None or negative')
-
-        if T_large is None or T_large < 0:
-            raise ValueError('T_large cannot be None or negative')
-
-        if 'T_guess' in kwargs:
-            print('Ignoring "T_guess" argument.')
-
-        self.N = len(y0)
-        self.fun = fun
-        self.jac = jac
-        self.T_large = T_large
-
-        y0_var = np.concatenate((y0,np.eye(self.N).flatten()))
-
-        if np.isscalar(atol):
-            atol += np.zeros(self.N)
-        if len(atol) == self.N:
-            atol = np.concatenate((atol,1e-2+np.zeros(self.N**2)))
-
-        if len(vars_to_use) == 0 or vars_to_use is None:
-            vars_to_use = np.arange(self.N)
-
-        self.variational_solver = env_solver(self._variational_system, t_span, y0_var,
-                                             T_guess=None, T=T_small/T_large, jac=jac,
-                                             rtol=rtol, atol=atol,
-                                             vars_to_use=vars_to_use,
-                                             is_variational=True,
-                                             **kwargs)
-
-        self.envelope_solver = EnvelopeSolver(lambda t,y: T_large*fun(t*T_large,y),
-                                              t_span, y0, T_guess=None, T=T_small/T_large)
-        self.variational_solver._reduced_fun = self.envelope_solver._envelope_fun
-
-
-    def solve(self):
-        return self.variational_solver.solve()

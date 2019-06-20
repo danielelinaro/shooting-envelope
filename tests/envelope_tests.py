@@ -2,7 +2,7 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
-from polimi.envelope import BEEnvelope, TrapEnvelope, VariationalEnvelope
+from polimi.envelope import BEEnvelope, TrapEnvelope
 
 
 # for saving data
@@ -162,7 +162,7 @@ def variational():
 
     def variational_system(fun, jac, t, y, T):
         N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
-        J = jac(t,y[:N])
+        J = jac(t*T,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
         return np.concatenate((T * fun(t*T, y[:N]), \
                                T * np.matmul(J,phi).flatten()))
@@ -181,33 +181,34 @@ def variational():
     y0 = np.array([-5.8133754 ,  0.13476983])
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
-    sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-7, atol=1e-8, dense_output=True)
+    sol = solve_ivp(var_fun, t_span_var, y0_var, rtol=1e-8, atol=1e-10, dense_output=True)
 
-    be_solver = VariationalEnvelope(fun, jac, y0, T_large, T_small,
-                                    rtol=1e-1, atol=1e-2,
-                                    env_solver=BEEnvelope)
-    trap_solver = VariationalEnvelope(fun, jac, y0, T_large, T_small,
-                                      rtol=1e-1, atol=1e-2,
-                                      env_solver=TrapEnvelope)
-    sol_be = be_solver.solve()
-    sol_trap = trap_solver.solve()
+    be_var_solver = BEEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
+                                 rtol=1e-1, atol=1e-2, is_variational=True)
+    trap_var_solver = TrapEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
+                                   rtol=1e-1, atol=1e-2, is_variational=True)
+    print('----------------------------------------------------------------')
+    var_sol_be = be_var_solver.solve()
+    print('----------------------------------------------------------------')
+    var_sol_trap = trap_var_solver.solve()
+    print('----------------------------------------------------------------')
 
     eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
     print('         correct eigenvalues:', eig)
-    eig,_ = np.linalg.eig(np.reshape(sol_be['y'][2:,-1],(2,2)))
+    eig,_ = np.linalg.eig(np.reshape(var_sol_be['y'][2:,-1],(2,2)))
     print('  BE approximate eigenvalues:', eig)
-    eig,_ = np.linalg.eig(np.reshape(sol_trap['y'][2:,-1],(2,2)))
+    eig,_ = np.linalg.eig(np.reshape(var_sol_trap['y'][2:,-1],(2,2)))
     print('TRAP approximate eigenvalues:', eig)
 
     plt.subplot(1,2,1)
     plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(sol_be['t'],sol_be['y'][0],'ro')
-    plt.plot(sol_trap['t'],sol_trap['y'][0],'go')
+    plt.plot(var_sol_be['t'],var_sol_be['y'][0],'ro')
+    plt.plot(var_sol_trap['t'],var_sol_trap['y'][0],'go')
     plt.subplot(1,2,2)
     plt.plot(t_span_var,[0,0],'b')
     plt.plot(sol['t'],sol['y'][2],'k')
-    plt.plot(sol_be['t'],sol_be['y'][2],'ro')
-    plt.plot(sol_trap['t'],sol_trap['y'][2],'go')
+    plt.plot(var_sol_be['t'],var_sol_be['y'][2],'ro')
+    plt.plot(var_sol_trap['t'],var_sol_trap['y'][2],'go')
     plt.show()
 
 

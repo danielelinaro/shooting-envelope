@@ -9,7 +9,7 @@ from polimi import vdp, vdp_jac
 
 def variational_system(fun, jac, t, y, T):
     N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
-    J = jac(t,y[:N])
+    J = jac(t*T,y[:N])
     phi = np.reshape(y[N:N+N**2],(N,N))
     return np.concatenate((T * fun(t*T, y[:N]), \
                            T * np.matmul(J,phi).flatten()))

@@ -127,7 +127,7 @@ class Shooting (BaseShooting):
 
 class EnvelopeShooting (BaseShooting):
 
-    def __init__(self, fun, N, T, estimate_T, small_T, jac=None, shooting_tol=1e-3,
+    def __init__(self, fun, N, T, estimate_T, small_T, jac, shooting_tol=1e-3,
                  env_rtol=1e-1, env_atol=1e-3, fun_rtol=1e-5, fun_atol=1e-7, env_solver=None, ax=None):
         super(EnvelopeShooting, self).__init__(fun, N, T, estimate_T, jac,
                                                shooting_tol, fun_rtol, fun_atol, ax)
@@ -147,8 +147,8 @@ class EnvelopeShooting (BaseShooting):
 
 
     def _integrate(self, y0):
-        solver = envelope.VariationalEnvelope(self.fun, self.jac, y0[:self.N],
-                                              self.T_large, self.T_small,
-                                              rtol=self.env_rtol, atol=self.env_atol,
-                                              env_solver=self.env_solver)
+        solver = self.env_solver(self.fun, [0,self.T_large], y0[:self.N], \
+                                 T_guess=None, T=self.T_small, jac=self.jac, \
+                                 rtol=self.env_rtol, atol=self.env_atol, \
+                                 is_variational=True)
         return solver.solve()
