@@ -71,13 +71,13 @@ class EnvelopeSolver (object):
             self.original_jac = jac
             self.t_span = t_span
         else:
-            if T is None:
-                raise Exception('T cannot be None if is_variational is True')
             if jac is None:
                 raise Exception('jac cannot be None if is_variational is True')
-            T /= t_span[1]
+            if T is None:
+                T_guess /= t_span[1]
+            else:
+                T /= t_span[1]
             self.T_large = t_span[1]
-            self.T_small = T
             self.t_span = [0,1]
             self.original_fun = lambda t,y: self.T_large * fun(t*self.T_large, y)
             self.original_jac = lambda t,y: jac(t*self.T_large, y)
@@ -112,6 +112,8 @@ class EnvelopeSolver (object):
             self.estimate_T = True
             self.f[:,0] = self._envelope_fun(self.t[0], self.y[:,0], T_guess)
             self.T = self.T_new
+            if self.is_variational:
+                self.T_small = self.T_new
         else:
             raise Exception('T_guess and T cannot both be None')
 
