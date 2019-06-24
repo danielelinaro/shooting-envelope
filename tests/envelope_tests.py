@@ -189,9 +189,10 @@ def variational():
     rtol = 1e-1
     atol = 1e-2
     be_var_solver = BEEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                                 rtol=rtol, atol=atol, is_variational=True)
+                               rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi,
+                               var_rtol=rtol, var_atol=atol)
     trap_var_solver = TrapEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                                   rtol=rtol, atol=atol, is_variational=True)
+                                   rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi)
     print('----------------------------------------------------------------')
     var_sol_be = be_var_solver.solve()
     print('----------------------------------------------------------------')
@@ -213,7 +214,11 @@ def variational():
     plt.plot(t_span_var,[0,0],'b')
     plt.plot(sol['t'],sol['y'][2],'k')
     plt.plot(var_sol_be['t'],var_sol_be['y'][2],'ro')
+    for i in range(0,len(var_sol_be['var']['t']),3):
+        plt.plot(var_sol_be['var']['t'][i:i+3],var_sol_be['var']['y'][0,i:i+3],'c.-')
     plt.plot(var_sol_trap['t'],var_sol_trap['y'][2],'go')
+    for i in range(0,len(var_sol_trap['var']['t']),3):
+        plt.plot(var_sol_trap['var']['t'][i:i+3],var_sol_trap['var']['y'][0,i:i+3],'m.-')
     plt.show()
 
 
