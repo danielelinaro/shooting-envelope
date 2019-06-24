@@ -411,39 +411,43 @@ class EnvelopeSolver (object):
 
 
     def _compute_monodromy_matrix(self, t, y, T_var_guess=None):
+        y_ext = np.concatenate((y, np.eye(self.n_dim).flatten()))
+
         if self.estimate_T_var:
+            if T_var_guess is None:
+                T_var_guess = self.T_var
+
             # find the equation of the plane containing y and
-            # orthogonal to fun(t,y)
-            y_ext = np.concatenate((y, np.eye(self.n_dim).flatten()))
+            # orthogonal to _variational_system(t,y)
             vars_to_use = np.arange(self.n_dim, self.n_dim + self.n_dim**2)
             f = self._variational_system(t,y_ext)
             w = f[vars_to_use] / np.linalg.norm(f[vars_to_use])
             b = -np.dot(w, y_ext[vars_to_use])
 
-            events_fun = lambda t,y: np.dot(w, y[vars_to_use]) + b
-            events_fun.direction = 1
+            events_fun = [lambda tt,yy: np.dot(w, yy[vars_to_use]) + b, \
+                          lambda tt,yy: tt - (t + self.T)]
+            events_fun[0].direction = 1
+            events_fun[1].direction = 0
 
-            if T_var_guess is None:
-                T_var_guess = self.T_var
-
-            sol = solve_ivp(self._variational_system, [t,t+T_var_guess*1.5], y_ext,
+            t_stop = t + max([self.T, 1.5*T_var_guess])
+            sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
                             rtol=self.original_fun_rtol, atol=self.original_fun_atol,
                             events=events_fun, dense_output=True)
             T_var = sol['t_events'][0][1] - t
-            #print('EnvelopeSolver._compute_monodromy_matrix(%.3f)> T_var = %g' % (t, T_var*self.T_large))
-        else:
-            T_var = self.T_var
+            y_ev = sol['sol'](sol['t_events'][1])
+            M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy(),
+            y_ev = sol['sol'](sol['t_events'][0][1])
+            M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy(),
+            return M, M_var, T_var
 
-        t_stop = t + max([self.T, T_var])
-        events_fun = lambda tt,yy: tt - (t + min([self.T, T_var]))
+        t_stop = t + max([self.T, self.T_var])
+        events_fun = lambda tt,yy: tt - (t + min([self.T, self.T_var]))
         # compute the monodromy matrix by integrating the variational system
-        sol = solve_ivp(self._variational_system, [t,t_stop],
-                        np.concatenate((y,np.eye(self.n_dim).flatten())),
+        sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
                         rtol=self.original_fun_rtol, atol=self.original_fun_atol,
                         events=events_fun, dense_output=True)
-
         y_ev = sol['sol'](sol['t_events'][0])
-        if t_stop == t + T_var:
+        if t_stop == t + self.T_var:
             # the variational system has a larger period than the original one
             M_var = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
             M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
@@ -452,7 +456,7 @@ class EnvelopeSolver (object):
             M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
             M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
 
-        return M, M_var, T_var
+        return M, M_var, self.T_var
 
 
 
