@@ -189,16 +189,16 @@ def variational():
     rtol = 1e-1
     atol = 1e-2
     be_var_solver = BEEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                               rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi,
-                               var_rtol=rtol, var_atol=atol)
+                               rtol=rtol, atol=atol, is_variational=True, \
+                               T_var_guess=2*np.pi*0.95, var_rtol=rtol, var_atol=atol)
     trap_var_solver = TrapEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                                   rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi,
-                                   var_rtol=rtol, var_atol=atol)
-    print('----------------------------------------------------------------')
+                                   rtol=rtol, atol=atol, is_variational=True, \
+                                   T_var_guess=2*np.pi*0.9, var_rtol=rtol, var_atol=atol)
+    print('----------------------------------------------------------------------------------')
     var_sol_be = be_var_solver.solve()
-    print('----------------------------------------------------------------')
+    print('----------------------------------------------------------------------------------')
     var_sol_trap = trap_var_solver.solve()
-    print('----------------------------------------------------------------')
+    print('----------------------------------------------------------------------------------')
 
     eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
     print('         correct eigenvalues:', eig)
