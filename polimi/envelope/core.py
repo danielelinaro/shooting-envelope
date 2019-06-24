@@ -201,7 +201,7 @@ class EnvelopeSolver (object):
         raise NotImplementedError
 
 
-    def _compute_variational_LTE(self, t0, t1, t2, y0, y1, y2):
+    def _compute_variational_LTE(self, t_prev, t_cur, t_next, y_prev, y_cur, y_next):
         raise NotImplementedError
 
 
@@ -385,24 +385,20 @@ class EnvelopeSolver (object):
         return 1./self.T_new * (self.y_new - sol['sol'](t))
 
 
-    def _extended_system(self, t, y):
-        return np.concatenate((self.original_fun(t, y[:self.n_dim]), \
-                               self._variational_system(t, y)))
-
-
     def _variational_system(self, t, y):
         N = self.n_dim
         T = self.T_large
         J = self.original_jac(t,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
-        return T * np.matmul(J,phi).flatten()
+        return np.concatenate((self.original_fun(t, y[:self.n_dim]), \
+                               T * np.matmul(J,phi).flatten()))
 
 
     def _compute_monodromy_matrix(self, t0, y0):
         t_stop = t0 + max([self.T, self.T_var])
         events_fun = lambda t,y: t - (t0 + min([self.T, self.T_var]))
         # compute the monodromy matrix by integrating the variational system
-        sol = solve_ivp(self._extended_system, [t0,t_stop],
+        sol = solve_ivp(self._variational_system, [t0,t_stop],
                         np.concatenate((y0,np.eye(self.n_dim).flatten())),
                         rtol=self.original_fun_rtol, atol=self.original_fun_atol,
                         events=events_fun, dense_output=True)
@@ -447,12 +443,13 @@ class BEEnvelope (EnvelopeSolver):
         return np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
 
 
-    def _compute_variational_LTE(self, t0, t1, t2, y0, y1, y2):
-        scale = self.var_atol + self.var_rtol * np.abs(y2)
-        f1 = (y1 - y0) / (t1 - t0)
-        f2 = (y2 - y1) / (t2 - t1)
-        coeff = np.abs(f2 * (f2 - f1) / (y2 - y1))
-        H = t2 - t1
+    def _compute_variational_LTE(self, t_prev, t_cur, t_next, y_prev, y_cur, y_next):
+        H = t_next - t_cur
+        scale = self.var_atol + self.var_rtol * np.abs(y_next)
+        f_cur = (y_cur - y_prev) / (t_cur - t_prev)
+        f_next = (y_next - y_cur) / (t_next - t_cur)
+        coeff = np.abs(f_next * (f_next - f_cur) / (y_next - y_cur))
+        coeff[coeff == 0] = np.min(coeff[coeff > 0])
         lte = H**2 / 2 * coeff
         H_new = np.floor(np.min(np.sqrt(2*scale/coeff)) / self.T_var) * self.T_var
         return lte,coeff,H_new
@@ -471,6 +468,8 @@ class TrapEnvelope (EnvelopeSolver):
                                            vars_to_use, is_variational, T_var,
                                            var_rtol, var_atol)
         self.df_cur = np.zeros(self.n_dim)
+        if self.is_variational:
+            self.df_cur_var = np.zeros(self.n_dim**2)
 
 
     def _one_period_step(self):
@@ -499,15 +498,18 @@ class TrapEnvelope (EnvelopeSolver):
         return np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
 
 
-    ### TODO: change this code to the expression for the trapezoidal LTE
-    def _compute_variational_LTE(self, t0, t1, t2, y0, y1, y2):
-        scale = self.var_atol + self.var_rtol * np.abs(y2)
-        f1 = (y1 - y0) / (t1 - t0)
-        f2 = (y2 - y1) / (t2 - t1)
-        coeff = np.abs(f2 * (f2 - f1) / (y2 - y1))
-        H = t2 - t1
-        lte = H**2 / 2 * coeff
-        H_new = np.floor(np.min(np.sqrt(2*scale/coeff)) / self.T_var) * self.T_var
+    def _compute_variational_LTE(self, t_prev, t_cur, t_next, y_prev, y_cur, y_next):
+        H = t_next - t_cur
+        scale = self.var_atol + self.var_rtol * np.abs(y_next)
+        f_cur = (y_cur - y_prev) / (t_cur - t_prev)
+        f_next = (y_next - y_cur) / (t_next - t_cur)
+        df_next = (f_next - f_cur) / (y_next - y_cur)
+        d2f_next = (df_next - self.df_cur_var) / (y_next - y_cur)
+        coeff = np.abs(f_next * (f_next*d2f_next + 2*(df_next**2)))
+        coeff[coeff == 0] = np.min(coeff[coeff > 0])
+        lte = H**3 / 12 * coeff
+        H_new = np.floor(np.min((12*scale/coeff)**(1/3)) / self.T_var) * self.T_var
+        self.df_next_var = df_next
         return lte, coeff, H_new
 
 
@@ -515,5 +517,7 @@ class TrapEnvelope (EnvelopeSolver):
         flag = super(TrapEnvelope, self)._step()
         if flag == EnvelopeSolver.SUCCESS:
             self.df_cur = self.df_next
+            if self.is_variational and hasattr(self, 'df_next_var'):
+                self.df_cur_var = self.df_next_var
         return flag
 
