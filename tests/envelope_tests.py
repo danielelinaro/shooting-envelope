@@ -115,12 +115,12 @@ def forced():
     print('The number of integrated periods of the original system with TRAP is %d.' % trap_solver.original_fun_period_eval)
     sol = solve_ivp(fun, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
 
-    np.savetxt('vdp_forced_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-               pack(sol['t'],sol['y']), fmt='%.3e')
-    np.savetxt('vdp_forced_envelope_BE_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-               pack(sol_be['t'],sol_be['y']), fmt='%.3e')
-    np.savetxt('vdp_forced_envelope_trap_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-               pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
+    #np.savetxt('vdp_forced_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
+    #           pack(sol['t'],sol['y']), fmt='%.3e')
+    #np.savetxt('vdp_forced_envelope_BE_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
+    #           pack(sol_be['t'],sol_be['y']), fmt='%.3e')
+    #np.savetxt('vdp_forced_envelope_trap_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
+    #           pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
 
     plt.plot(sol['t'],sol['y'][0],'k')
     plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
@@ -192,7 +192,8 @@ def variational():
                                rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi,
                                var_rtol=rtol, var_atol=atol)
     trap_var_solver = TrapEnvelope(fun, [0,T_large], y0, T_guess=None, T=T_small, jac=jac, \
-                                   rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi)
+                                   rtol=rtol, atol=atol, is_variational=True, T_var=2*np.pi,
+                                   var_rtol=rtol, var_atol=atol)
     print('----------------------------------------------------------------')
     var_sol_be = be_var_solver.solve()
     print('----------------------------------------------------------------')

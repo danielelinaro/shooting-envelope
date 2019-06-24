@@ -9,7 +9,11 @@ DEBUG = True
 VERBOSE_DEBUG = False
 
 
+NEWTON_KRYLOV_FTOL = 1e-3
+FSOLVE_XTOL = 1e-1
+
 __all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope', 'EnvelopeInterp']
+
 
 
 class EnvelopeInterp (object):
@@ -38,6 +42,7 @@ class EnvelopeInterp (object):
         self.t = t
         self.y = sol['y'][:,-1]
         return self.y
+
 
 
 class EnvelopeSolver (object):
@@ -188,8 +193,105 @@ class EnvelopeSolver (object):
         return sol
 
 
-    def _step(self):
+    def _compute_y_next(self, y_cur, t_next, H, y_guess):
         raise NotImplementedError
+
+
+    def _compute_LTE(self):
+        raise NotImplementedError
+
+
+    def _compute_variational_LTE(self, t0, t1, t2, y0, y1, y2):
+        raise NotImplementedError
+
+
+    def _compute_next_H(self, scale, coeff, T):
+        raise NotImplementedError
+
+
+    def _step(self):
+        H = self.H
+
+        t_cur = self.t[-1]
+        y_cur = self.y[:,-1]
+        f_cur = self.f[:,-1]
+
+        if t_cur + H > self.t_span[1]:
+            H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
+        t_next = t_cur + H
+
+        # step size in units of period
+        n_periods = int(np.round(H / self.T))
+
+        if self.is_variational:
+            M,M_var = self._compute_monodromy_matrix(t_cur, y_cur)
+
+        if n_periods == 1:
+            # the step is equal to the period: we don't need to solve the implicit system
+            y_next = self.y_new
+        else:
+            # estimate the next value by extrapolation using explicit Euler
+            y_extrap = y_cur + H * f_cur
+            # correct the estimate
+            y_next = self._compute_y_next(y_cur, f_cur, t_next, H, y_extrap)
+
+        if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
+            return EnvelopeSolver.DT_TOO_LARGE
+
+        if self.is_variational:
+            n_periods_var = int(np.floor((t_next - t_cur) / self.T_var) + 1)
+            t0 = t_cur
+            t1 = t_cur + self.T_var
+            t2 = t_cur + n_periods_var * self.T_var
+            y0_var = np.eye(self.n_dim)
+            for mat in self.mono_mat:
+                y0_var = np.matmul(y0_var,mat)
+            y1_var = np.matmul(y0_var,M_var)
+            y2_var = y0_var.copy()
+            for i in range(n_periods_var):
+                y2_var = np.matmul(y2_var,M_var)
+            if n_periods_var > 1:
+                scale_var = self.var_atol + self.var_rtol * np.abs(y2_var.flatten())
+                lte_var,coeff_var,H_new_var = self._compute_variational_LTE(t0, t1, t2,
+                                                                            y0_var.flatten(),
+                                                                            y1_var.flatten(),
+                                                                            y2_var.flatten())
+
+        # the value of the derivative at the new point
+        f_next = self._envelope_fun(t_next,y_next)
+
+        scale = self.atol + self.rtol * np.abs(y_next)
+        # compute the local truncation error
+        lte,coeff = self._compute_LTE(H, f_next, f_cur, y_next, y_cur)
+
+        if self.estimate_T:
+            T = self.T_new
+        else:
+            T = self.T
+
+        # compute the new value of H as the maximum value that allows having an LTE below threshold
+        self.H_new = self._compute_next_H(scale, coeff, T)
+        if self.is_variational and n_periods_var > 1:
+            self.H_new = np.min((self.H_new, np.floor(H_new_var / T) * T))
+
+        if np.any(lte > scale) or \
+           (self.is_variational and n_periods_var > 1 and np.any(lte_var > scale_var)):
+            return EnvelopeSolver.LTE_TOO_LARGE
+
+        self.t_next = t_next
+        self.y_next = y_next
+        self.f_next = f_next
+
+        if self.is_variational:
+            self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
+            self.t_var.append(t0)
+            self.t_var.append(t1)
+            self.t_var.append(t2)
+            self.y_var.append(y0_var)
+            self.y_var.append(y1_var)
+            self.y_var.append(y2_var)
+
+        return EnvelopeSolver.SUCCESS
 
 
     def _one_period_step(self):
@@ -283,20 +385,24 @@ class EnvelopeSolver (object):
         return 1./self.T_new * (self.y_new - sol['sol'](t))
 
 
+    def _extended_system(self, t, y):
+        return np.concatenate((self.original_fun(t, y[:self.n_dim]), \
+                               self._variational_system(t, y)))
+
+
     def _variational_system(self, t, y):
         N = self.n_dim
         T = self.T_large
         J = self.original_jac(t,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
-        return np.concatenate((self.original_fun(t, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
+        return T * np.matmul(J,phi).flatten()
 
 
     def _compute_monodromy_matrix(self, t0, y0):
         t_stop = t0 + max([self.T, self.T_var])
         events_fun = lambda t,y: t - (t0 + min([self.T, self.T_var]))
         # compute the monodromy matrix by integrating the variational system
-        sol = solve_ivp(self._variational_system, [t0,t_stop],
+        sol = solve_ivp(self._extended_system, [t0,t_stop],
                         np.concatenate((y0,np.eye(self.n_dim).flatten())),
                         rtol=self.original_fun_rtol, atol=self.original_fun_atol,
                         events=events_fun, dense_output=True)
@@ -312,6 +418,7 @@ class EnvelopeSolver (object):
         return M, M_var
 
 
+
 class BEEnvelope (EnvelopeSolver):
     def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
@@ -324,97 +431,32 @@ class BEEnvelope (EnvelopeSolver):
                                          vars_to_use, is_variational, T_var,
                                          var_rtol, var_atol)
 
+    def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
+        #return fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, xtol=1e-1)
+        return newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, f_tol=1e-3)
 
-    def _step(self):
-        H = self.H
 
-        t_cur = self.t[-1]
-        y_cur = self.y[:,-1]
-        f_cur = self.f[:,-1]
-
-        if t_cur + H > self.t_span[1]:
-            H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
-        t_next = t_cur + H
-
-        # step size in units of period
-        n_periods = int(np.round(H / self.T))
-
-        if self.is_variational:
-            M,M_var = self._compute_monodromy_matrix(t_cur, y_cur)
-
-        if n_periods == 1:
-            # the step is equal to the period: we don't need to solve the implicit system
-            y_next = self.y_new
-        else:
-            # estimate the next value by extrapolation using explicit Euler
-            y_extrap = y_cur + H * f_cur
-            # correct the estimate using implicit Euler
-            #y_next = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, xtol=1e-1)
-            y_next = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_extrap, f_tol=1e-3)
-
-        if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
-            return EnvelopeSolver.DT_TOO_LARGE
-
-        if self.is_variational:
-            n_periods_var = int(np.floor((t_next - t_cur) / self.T_var) + 1)
-            t0 = t_cur
-            t1 = t_cur + self.T_var
-            t2 = t_cur + n_periods_var * self.T_var
-            y0_var = np.eye(self.n_dim)
-            for mat in self.mono_mat:
-                y0_var = np.matmul(y0_var,mat)
-            y1_var = np.matmul(y0_var,M_var)
-            y2_var = y0_var.copy()
-            for i in range(n_periods_var):
-                y2_var = np.matmul(y2_var,M_var)
-            if n_periods_var > 1:
-                y0_var_fl = y0_var.flatten()
-                y1_var_fl = y1_var.flatten()
-                y2_var_fl = y2_var.flatten()
-                f1 = (y1_var_fl - y0_var_fl) / (t1 - t0)
-                f2 = (y2_var_fl - y1_var_fl) / (t2 - t1)
-                coeff_var = np.abs(f2 * (f2 - f1) / (y2_var_fl - y1_var_fl))
-                H_var = t2 - t1
-                lte_var = H_var**2 / 2 * coeff_var
-                scale_var = self.var_atol + self.var_rtol * np.abs(y2_var_fl)
-                H_new_var = np.floor(np.min(np.sqrt(2*scale_var/coeff_var)) / self.T_var) * self.T_var
-
-        # the value of the derivative at the new point
-        f_next = self._envelope_fun(t_next,y_next)
-
-        scale = self.atol + self.rtol * np.abs(y_next)
-        # compute the local truncation error
+    def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
         coeff = np.abs(f_next * (f_next - f_cur) / (y_next - y_cur))
         coeff[coeff == 0] = np.min(coeff[coeff > 0])
         lte = H**2 / 2 * coeff
+        return lte, coeff
 
-        if self.estimate_T:
-            T = self.T_new
-        else:
-            T = self.T
 
-        # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
-        if self.is_variational and n_periods_var > 1:
-            self.H_new = np.min((self.H_new, np.floor(H_new_var / T) * T))
+    def _compute_next_H(self, scale, coeff, T):
+        return np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
 
-        if np.any(lte > scale) or (self.is_variational and n_periods_var > 1 and np.any(lte_var > scale_var)):
-            return EnvelopeSolver.LTE_TOO_LARGE
 
-        self.t_next = t_next
-        self.y_next = y_next
-        self.f_next = f_next
+    def _compute_variational_LTE(self, t0, t1, t2, y0, y1, y2):
+        scale = self.var_atol + self.var_rtol * np.abs(y2)
+        f1 = (y1 - y0) / (t1 - t0)
+        f2 = (y2 - y1) / (t2 - t1)
+        coeff = np.abs(f2 * (f2 - f1) / (y2 - y1))
+        H = t2 - t1
+        lte = H**2 / 2 * coeff
+        H_new = np.floor(np.min(np.sqrt(2*scale/coeff)) / self.T_var) * self.T_var
+        return lte,coeff,H_new
 
-        if self.is_variational:
-            self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
-            self.t_var.append(t0)
-            self.t_var.append(t1)
-            self.t_var.append(t2)
-            self.y_var.append(y0_var)
-            self.y_var.append(y1_var)
-            self.y_var.append(y2_var)
-
-        return EnvelopeSolver.SUCCESS
 
 
 class TrapEnvelope (EnvelopeSolver):
@@ -436,86 +478,42 @@ class TrapEnvelope (EnvelopeSolver):
         self.df_cur = (self.f[:,-1] - self.f[:,-2]) / (self.y[:,-1] - self.y[:,-2])
 
 
-    def _step(self):
-        H = self.H
+    def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
+        #return fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
+        #              y_guess, xtol=FSOLVE_XTOL)
+        return newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
+                             y_guess, f_tol=NEWTON_KRYLOV_FTOL)
 
-        t_cur = self.t[-1]
-        y_cur = self.y[:,-1]
-        f_cur = self.f[:,-1]
-        df_cur = self.df_cur
 
-        if t_cur + H > self.t_span[1]:
-            H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
-        t_next = t_cur + H
-
-        # step size in units of period
-        n_periods = int(np.round(H / self.T))
-
-        if self.is_variational:
-            M,M_var = self._compute_monodromy_matrix(t_cur, y_cur)
-
-        if n_periods == 1:
-            # the step is equal to the period: we don't need to solve the implicit system
-            y_next = self.y_new
-        else:
-            # estimate the next value by extrapolation using explicit Euler
-            y_extrap = y_cur + H * f_cur
-            # correct the estimate using the trapezoidal rule
-            #y_next = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), y_extrap, xtol=1e-1)
-            y_next = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)),
-                                   y_extrap, f_tol=1e-3)
-
-        if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
-            return EnvelopeSolver.DT_TOO_LARGE
-
-        if self.is_variational:
-            n_periods_var = int(np.floor((t_next - t_cur) / self.T_var) + 1)
-            t0 = t_cur
-            t1 = t_cur + self.T_var
-            t2 = t_cur + n_periods_var * self.T_var
-            y0_var = np.eye(self.n_dim)
-            for mat in self.mono_mat:
-                y0_var = np.matmul(y0_var,mat)
-            y1_var = np.matmul(y0_var,M_var)
-            y2_var = y0_var.copy()
-            for i in range(n_periods_var):
-                y2_var = np.matmul(y2_var,M_var)
-
-        # the value of the derivative at the new point
-        f_next = self._envelope_fun(t_next,y_next)
-
-        scale = self.atol + self.rtol * np.abs(y_next)
-        # compute the local truncation error
+    def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
         df_next = (f_next - f_cur) / (y_next - y_cur)
-        d2f_next = (df_next - df_cur) / (y_next - y_cur)
+        d2f_next = (df_next - self.df_cur) / (y_next - y_cur)
         coeff = np.abs(f_next * (f_next*d2f_next + 2*(df_next**2)))
         coeff[coeff == 0] = np.min(coeff[coeff > 0])
         lte = (H**3)/12 * coeff
+        self.df_next = df_next
+        return lte, coeff
 
-        if self.estimate_T:
-            T = self.T_new
-        else:
-            T = self.T
 
-        # compute the new value of H as the maximum value that allows having an LTE below threshold
-        self.H_new = np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
+    def _compute_next_H(self, scale, coeff, T):
+        return np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
 
-        if np.any(lte > scale):
-            return EnvelopeSolver.LTE_TOO_LARGE
 
-        self.t_next = t_next
-        self.y_next = y_next
-        self.f_next = f_next
-        self.df_cur = df_next
+    ### TODO: change this code to the expression for the trapezoidal LTE
+    def _compute_variational_LTE(self, t0, t1, t2, y0, y1, y2):
+        scale = self.var_atol + self.var_rtol * np.abs(y2)
+        f1 = (y1 - y0) / (t1 - t0)
+        f2 = (y2 - y1) / (t2 - t1)
+        coeff = np.abs(f2 * (f2 - f1) / (y2 - y1))
+        H = t2 - t1
+        lte = H**2 / 2 * coeff
+        H_new = np.floor(np.min(np.sqrt(2*scale/coeff)) / self.T_var) * self.T_var
+        return lte, coeff, H_new
 
-        if self.is_variational:
-            self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
-            self.t_var.append(t0)
-            self.t_var.append(t1)
-            self.t_var.append(t2)
-            self.y_var.append(y0_var)
-            self.y_var.append(y1_var)
-            self.y_var.append(y2_var)
 
-        return EnvelopeSolver.SUCCESS
+    def _step(self):
+        flag = super(TrapEnvelope, self)._step()
+        if flag == EnvelopeSolver.SUCCESS:
+            self.df_cur = self.df_next
+        return flag
 
