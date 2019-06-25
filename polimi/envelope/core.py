@@ -302,6 +302,9 @@ class EnvelopeSolver (object):
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
         self.H_new = self._compute_next_H(scale, coeff, T)
+        if t_next + self.H_new > self.t_span[1]:
+            self.H_new = self.T * np.floor((self.t_span[1] - t_next) / self.T)
+
         if self.is_variational and n_periods_var > 1:
             self.H_new = np.min((self.H_new, np.floor(H_new_var / T) * T))
 
