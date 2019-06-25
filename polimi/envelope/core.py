@@ -7,7 +7,9 @@ from scipy.interpolate import interp1d
 
 DEBUG = True
 VERBOSE_DEBUG = False
-
+if DEBUG:
+    from .. import utils
+    colors = utils.ColorFactory()
 
 NEWTON_KRYLOV_FTOL = 1e-3
 FSOLVE_XTOL = 1e-1
@@ -144,9 +146,9 @@ class EnvelopeSolver (object):
         self.period = [self.T]
         if DEBUG:
             if self.is_variational:
-                print('EnvelopeSolver.__init__(%.3f)> T = %.6f T_var = %.6f' % (self.t_span[0],self.T,self.T_var))
+                print('EnvelopeSolver.__init__(%.4e)> T = %.3e T_var = %.3e' % (self.t_span[0],self.T,self.T_var))
             else:
-                print('EnvelopeSolver.__init__(%.3f)> T = %.6f' % (self.t_span[0],self.T))
+                print('EnvelopeSolver.__init__(%.4e)> T = %.3e' % (self.t_span[0],self.T))
 
 
     def solve(self):
@@ -177,18 +179,32 @@ class EnvelopeSolver (object):
                 # the LTE was above threshold: _step has already changed the value of H_new
                 msg = 'LTE'
 
+            H = self.H
             if self.H_new < self.T:
                 self._one_period_step()
                 msg += ' 1T'
             self.H = self.H_new
 
             if DEBUG:
+                t_cur = self.t[-1]
+                if msg != 'LTE':
+                    H = np.diff(self.t[-2:])[0]
+                N = round(H/self.T)
+                color_fun = colors.green
+                if msg == 'LTE':
+                    color_fun = colors.red
+                elif msg == 'LTE 1T':
+                    color_fun = colors.yellow
+                H_str = color_fun('%.3e' % H)
+                N_str = color_fun('%4d' % N)
+                t_cur_str = color_fun('%.4e' % t_cur)
+                msg = color_fun(msg)
                 if self.is_variational:
-                    print('EnvelopeSolver.solve(%.3f)> T = %f, T_var = %f, H = %f - %s' % \
-                          (self.t[-1], self.T, self.T_var, self.H, msg))
+                    print('EnvelopeSolver.solve(%s)> T = %.3e, T_var = %.3e, H = %s, N = %s- %s' % \
+                          (t_cur_str, self.T, self.T_var, H_str, N_str, msg))
                 else:
-                    print('EnvelopeSolver.solve(%.3f)> T = %f, H = %f - %s' % \
-                          (self.t[-1], self.T, self.H, msg))
+                    print('EnvelopeSolver.solve(%s)> T = %.3e, H = %s, N = %s - %s' % \
+                          (t_cur_str, self.T, H_str, N_str, msg))
 
         idx, = np.where(self.t <= self.t_span[1] + self.T/2)
         sol = {'t': self.t[idx], 'y': self.y[:,idx],
@@ -355,7 +371,7 @@ class EnvelopeSolver (object):
             self.t_new = t + self.T
             self.y_new = sol['y'][:,-1]
             if VERBOSE_DEBUG:
-                print('EnvelopeSolver._envelope_fun(%.3f)> y = (%.6f,%.6f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T))
+                print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.6f,%.6f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T))
             # return the "vector field" of the envelope
             self.original_fun_period_eval += 1
             return 1./self.T * (sol['y'][:,-1] - y)
@@ -389,13 +405,13 @@ class EnvelopeSolver (object):
         except:
             T = T_guess
             if DEBUG:
-                print('EnvelopeSolver._envelope_fun(%.3f)> T = T_guess = %.6f.' % (t,T))
+                print('EnvelopeSolver._envelope_fun(%.4e)> T = T_guess = %.3e.' % (t,T))
                 
         self.T_new = T
         self.t_new = t + self.T_new
         self.y_new = sol['sol'](self.t_new)
         if VERBOSE_DEBUG:
-            print('EnvelopeSolver._envelope_fun(%.3f)> y = (%.4f,%.4f) T = %.6f.' % (t,self.y_new[0],self.y_new[1],self.T_new))
+            print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.4f,%.4f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T_new))
         self.original_fun_period_eval += 1.5
         # return the "vector field" of the envelope
         return 1./self.T_new * (self.y_new - sol['sol'](t))
