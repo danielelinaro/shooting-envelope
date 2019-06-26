@@ -124,6 +124,7 @@ class EnvelopeSolver (object):
             raise Exception('T_guess and T cannot both be None')
 
         if self.is_variational:
+            self.compute_variational_LTE = True
             if T_var is not None:
                 self.estimate_T_var = False
                 self.T_var = T_var / self.T_large
@@ -131,7 +132,10 @@ class EnvelopeSolver (object):
                 self.estimate_T_var = True
                 _,_,self.T_var = self._compute_monodromy_matrix(t_span[0], y0, T_var_guess/self.T_large)
             else:
-                raise Exception('T_var_guess and T_var cannot both be None if is_variational is True')
+                self.compute_variational_LTE = False
+                self.estimate_T_var = False
+                self.T_var = -1
+                print('EnvelopeSolver.__init__(%.4e)> will not compute variational LTE.' % 0)
             self.t_span = [0,1]
             self.mono_mat = []
             self.t_var = []
@@ -180,7 +184,7 @@ class EnvelopeSolver (object):
                 msg = 'LTE'
 
             H = self.H
-            if self.H_new < self.T:
+            if self.H_new < self.T and self.t[-1] < self.t_span[1]:
                 self._one_period_step()
                 msg += ' 1T'
             self.H = self.H_new
@@ -200,7 +204,7 @@ class EnvelopeSolver (object):
                 t_cur_str = color_fun('%.4e' % t_cur)
                 msg = color_fun(msg)
                 if self.is_variational:
-                    print('EnvelopeSolver.solve(%s)> T = %.3e, T_var = %.3e, H = %s, N = %s- %s' % \
+                    print('EnvelopeSolver.solve(%s)> T = %.3e, T_var = %.3e, H = %s, N = %s - %s' % \
                           (t_cur_str, self.T, self.T_var, H_str, N_str, msg))
                 else:
                     print('EnvelopeSolver.solve(%s)> T = %.3e, H = %s, N = %s - %s' % \
@@ -269,7 +273,7 @@ class EnvelopeSolver (object):
         if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
             return EnvelopeSolver.DT_TOO_LARGE
 
-        if self.is_variational:
+        if self.is_variational and self.compute_variational_LTE:
             n_periods_var = int(np.floor((t_next - t_cur) / self.T_var) + 1)
             t0 = t_cur
             t1 = t_cur + self.T_var
@@ -305,11 +309,12 @@ class EnvelopeSolver (object):
         if t_next + self.H_new > self.t_span[1]:
             self.H_new = self.T * np.floor((self.t_span[1] - t_next) / self.T)
 
-        if self.is_variational and n_periods_var > 1:
+        if self.is_variational and self.compute_variational_LTE and n_periods_var > 1:
             self.H_new = np.min((self.H_new, np.floor(H_new_var / T) * T))
 
         if np.any(lte > scale) or \
-           (self.is_variational and n_periods_var > 1 and np.any(lte_var > scale_var)):
+           (self.is_variational and self.compute_variational_LTE and \
+            n_periods_var > 1 and np.any(lte_var > scale_var)):
             return EnvelopeSolver.LTE_TOO_LARGE
 
         self.t_next = t_next
@@ -318,13 +323,14 @@ class EnvelopeSolver (object):
 
         if self.is_variational:
             self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
-            self.t_var.append(t0)
-            self.t_var.append(t1)
-            self.t_var.append(t2)
-            self.y_var.append(y0_var)
-            self.y_var.append(y1_var)
-            self.y_var.append(y2_var)
-            self.T_var = T_var
+            if self.compute_variational_LTE:
+                self.t_var.append(t0)
+                self.t_var.append(t1)
+                self.t_var.append(t2)
+                self.y_var.append(y0_var)
+                self.y_var.append(y1_var)
+                self.y_var.append(y2_var)
+                self.T_var = T_var
 
         return EnvelopeSolver.SUCCESS
 
@@ -334,17 +340,18 @@ class EnvelopeSolver (object):
             M,M_var,self.T_var = self._compute_monodromy_matrix(self.t[-1],self.y[:,-1])
             self.mono_mat.append(M)
             ### TODO: check the following code
-            y0_var = np.eye(self.n_dim)
-            for mat in self.mono_mat:
-                y0_var = np.matmul(y0_var,mat)
-            y1_var = np.matmul(y0_var,M_var)
-            y2_var = y1_var.copy()
-            self.t_var.append(self.t[-1])
-            self.t_var.append(self.t[-1] + self.T_var)
-            self.t_var.append(self.t[-1] + self.T_var)
-            self.y_var.append(y0_var)
-            self.y_var.append(y1_var)
-            self.y_var.append(y2_var)
+            if self.compute_variational_LTE:
+                y0_var = np.eye(self.n_dim)
+                for mat in self.mono_mat:
+                    y0_var = np.matmul(y0_var,mat)
+                y1_var = np.matmul(y0_var,M_var)
+                y2_var = y1_var.copy()
+                self.t_var.append(self.t[-1])
+                self.t_var.append(self.t[-1] + self.T_var)
+                self.t_var.append(self.t[-1] + self.T_var)
+                self.y_var.append(y0_var)
+                self.y_var.append(y1_var)
+                self.y_var.append(y2_var)
         self._envelope_fun(self.t[-1],self.y[:,-1])
         self.t = np.append(self.t,self.t_new)
         self.y = np.append(self.y,np.reshape(self.y_new,(self.n_dim,1)),axis=1)
@@ -459,23 +466,28 @@ class EnvelopeSolver (object):
             M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy(),
             return M, M_var, T_var
 
-        t_stop = t + max([self.T, self.T_var])
-        events_fun = lambda tt,yy: tt - (t + min([self.T, self.T_var]))
-        # compute the monodromy matrix by integrating the variational system
-        sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
-                        rtol=self.original_fun_rtol, atol=self.original_fun_atol,
-                        events=events_fun, dense_output=True)
-        y_ev = sol['sol'](sol['t_events'][0])
-        if t_stop == t + self.T_var:
-            # the variational system has a larger period than the original one
-            M_var = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
-            M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
-        else:
-            # the variational system has a smaller period than the original one
-            M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
-            M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
+        if self.compute_variational_LTE:
+            t_stop = t + max([self.T, self.T_var])
+            events_fun = lambda tt,yy: tt - (t + min([self.T, self.T_var]))
+            # compute the monodromy matrix by integrating the variational system
+            sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
+                            rtol=self.original_fun_rtol, atol=self.original_fun_atol,
+                            events=events_fun, dense_output=True)
+            y_ev = sol['sol'](sol['t_events'][0])
+            if t_stop == t + self.T_var:
+                # the variational system has a larger period than the original one
+                M_var = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
+                M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
+            else:
+                # the variational system has a smaller period than the original one
+                M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
+                M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
+            return M, M_var, self.T_var
 
-        return M, M_var, self.T_var
+        sol = solve_ivp(self._variational_system, [t,t+self.T], y_ext,
+                        rtol=self.original_fun_rtol, atol=self.original_fun_atol)
+        M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
+        return M, None, -1
 
 
 
