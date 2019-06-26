@@ -6,11 +6,42 @@ from scipy.integrate import solve_ivp
 
 from polimi.systems import boost, boost_jac
 from polimi.envelope import BEEnvelope, TrapEnvelope
+from polimi.switching import Boost, solve_ivp_switch
+
+
+def system():
+    T = 20e-6
+    DC = 0.5
+    ki = 1
+    Vin = 5
+
+    t0 = 0
+    t_end = 40*T
+    t_span = np.array([t0, t_end])
+
+    y0 = np.array([10,1])
+
+    boost = Boost(t0, T, DC, ki, Vin=Vin)
+    fun_rtol = 1e-10
+    fun_atol = 1e-12
+    sol = solve_ivp_switch(boost, t_span, y0, \
+                           method='BDF', jac=boost.J, \
+                           rtol=fun_rtol, atol=fun_atol)
+
+    ax = plt.subplot(2, 1, 1)
+    plt.plot(t_span*1e6, [Vin,Vin], 'r')
+    plt.plot(sol['t']*1e6, sol['y'][0], 'k')
+    plt.ylabel(r'$V_C$ (V)')
+    plt.subplot(2, 1, 2, sharex=ax)
+    plt.plot(sol['t']*1e6, sol['y'][1], 'k')
+    plt.xlabel(r'Time ($\mu$s)')
+    plt.ylabel(r'$I_L$ (A)')
+    plt.show()
 
 
 def envelope():
     T = 20e-6
-    DC = 0.4
+    DC = 0.5
     fun = lambda t,y: boost(t, y, T, DC)
     jac = lambda t,y: boost_jac(t, y, T, DC)
     fun_rtol = 1e-10
@@ -134,5 +165,6 @@ def variational():
 
 
 if __name__ == '__main__':
+    system()
     #envelope()
-    variational()
+    #variational()
