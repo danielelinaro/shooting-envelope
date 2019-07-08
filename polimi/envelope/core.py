@@ -168,6 +168,8 @@ class EnvelopeSolver (object):
                 if self.estimate_T:
                     self.T = self.T_new
                 self.period.append(self.T)
+                if self.H_new == 0:
+                    self.H_new = self.T
                 msg = 'OK'
             elif flag == EnvelopeSolver.DT_TOO_LARGE:
                 # the variation in period was too large
@@ -365,7 +367,14 @@ class EnvelopeSolver (object):
         
     def _envelope_fun(self,t,y,T_guess=None):
         if not self.estimate_T:
-            if self.original_fun_method == 'BDF':
+            if not type(self.original_fun_method) is str:
+                sol = self.original_fun_method(self.original_fun, [t,t+self.T], y, \
+                                               method='BDF', jac=self.original_jac, \
+                                               jac_sparsity=self.original_jac_sparsity,
+                                               vectorized=self.original_fun_vectorized,
+                                               rtol=self.original_fun_rtol,
+                                               atol=self.original_fun_atol)
+            elif self.original_fun_method == 'BDF':
                 sol = solve_ivp(self.original_fun,[t,t+self.T],y,
                                 self.original_fun_method,jac=self.original_jac,
                                 jac_sparsity=self.original_jac_sparsity,
@@ -396,16 +405,17 @@ class EnvelopeSolver (object):
 
         events_fun = lambda t,y: np.dot(w, y[self.vars_to_use]) + b
         events_fun.direction = 1
+        events_fun.terminal = 1
 
         if self.original_fun_method == 'BDF':
-            sol = solve_ivp(self.original_fun,[t,t+1.5*T_guess],y,
+            sol = solve_ivp(self.original_fun,[t,t+2*T_guess],y,
                             self.original_fun_method,jac=self.original_jac,
                             jac_sparsity=self.original_jac_sparsity,
                             vectorized=self.original_fun_vectorized,
                             events=events_fun,dense_output=True,
                             rtol=self.original_fun_rtol,atol=self.original_fun_atol)
         else:
-            sol = solve_ivp(self.original_fun,[t,t+1.5*T_guess],y,
+            sol = solve_ivp(self.original_fun,[t,t+2*T_guess],y,
                             self.original_fun_method,vectorized=self.original_fun_vectorized,
                             events=events_fun,dense_output=True,
                             rtol=self.original_fun_rtol,atol=self.original_fun_atol)
@@ -504,8 +514,8 @@ class BEEnvelope (EnvelopeSolver):
                                          T_var_guess, var_rtol, var_atol)
 
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
-        #return fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, xtol=1e-1)
-        return newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, f_tol=1e-3)
+        #return fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, xtol=FSOLVE_XTOL)
+        return newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, f_tol=NEWTON_KRYLOV_FTOL)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):

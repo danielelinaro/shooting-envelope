@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-from polimi.systems import boost, boost_jac
 from polimi.envelope import BEEnvelope, TrapEnvelope
 from polimi.switching import Boost, solve_ivp_switch
 
@@ -14,26 +13,40 @@ def system():
     DC = 0.5
     ki = 1
     Vin = 5
+    Vref = 5
 
     t0 = 0
-    t_end = 40*T
+    t_end = 50*T
     t_span = np.array([t0, t_end])
 
-    y0 = np.array([10,1])
+    y0 = np.array([Vin,1])
 
-    boost = Boost(t0, T, DC, ki, Vin=Vin)
     fun_rtol = 1e-10
     fun_atol = 1e-12
-    sol = solve_ivp_switch(boost, t_span, y0, \
-                           method='BDF', jac=boost.J, \
-                           rtol=fun_rtol, atol=fun_atol)
+
+    boost = Boost(t0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost.vector_field_index = 0
+
+    print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
+    sol_a = solve_ivp_switch(boost, t_span, y0, \
+                             method='BDF', jac=boost.J, \
+                             rtol=fun_rtol, atol=fun_atol)
+    print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
+
+    print('Vector field index at the beginning of the second integration: %d.' % boost.vector_field_index)
+    sol_b = solve_ivp_switch(boost, sol_a['t'][-1]+t_span, sol_a['y'][:,-1], \
+                             method='BDF', jac=boost.J, \
+                             rtol=fun_rtol, atol=fun_atol)
+    print('Vector field index at the end of the second integration: %d.' % boost.vector_field_index)
 
     ax = plt.subplot(2, 1, 1)
-    plt.plot(t_span*1e6, [Vin,Vin], 'r')
-    plt.plot(sol['t']*1e6, sol['y'][0], 'k')
+    plt.plot([0, sol_b['t'][-1]*1e6], [Vin,Vin], 'b')
+    plt.plot(sol_a['t']*1e6, sol_a['y'][0], 'k')
+    plt.plot(sol_b['t']*1e6, sol_b['y'][0], 'r')
     plt.ylabel(r'$V_C$ (V)')
     plt.subplot(2, 1, 2, sharex=ax)
-    plt.plot(sol['t']*1e6, sol['y'][1], 'k')
+    plt.plot(sol_a['t']*1e6, sol_a['y'][1], 'k')
+    plt.plot(sol_b['t']*1e6, sol_b['y'][1], 'r')
     plt.xlabel(r'Time ($\mu$s)')
     plt.ylabel(r'$I_L$ (A)')
     plt.show()
@@ -42,43 +55,52 @@ def system():
 def envelope():
     T = 20e-6
     DC = 0.5
-    fun = lambda t,y: boost(t, y, T, DC)
-    jac = lambda t,y: boost_jac(t, y, T, DC)
+    ki = 1
+    Vin = 5
+    Vref = 5
+
+    boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost.vector_field_index = 0
+
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    if T == 20e-6 and DC <= 0.45:
-        y0 = np.array([9.17375836, 1.00930474])
-    else:
-        y0 = None
+    y0 = np.array([Vin,1])
+    t_tran = 50*T
 
-    if y0 is None:
-        sol = solve_ivp(fun, [0,1000*T], [10,1], method='BDF', jac=jac, rtol=fun_rtol, atol=fun_atol)
-        y0 = sol['y'][:,-1]
-        plt.plot(sol['t'],sol['y'][0],'k')
-        plt.plot(sol['t'],sol['y'][1],'r')
-        plt.show()
+    sol = solve_ivp_switch(boost, [0,t_tran], y0, \
+                           method='BDF', jac=boost.J, \
+                           rtol=fun_rtol, atol=fun_atol)
+    #plt.plot(sol['t']*1e6,sol['y'][0],'k')
+    #plt.plot(sol['t']*1e6,sol['y'][1],'r')
+    #plt.show()
 
+    t_span = sol['t'][-1] + np.array([0, 1000*T])
+    y0 = sol['y'][:,-1]
+    print('t_span =', t_span)
     print('y0 =', y0)
+    print('index =', boost.vector_field_index)
 
-    t_span = [0, 500*T]
-    be_solver = BEEnvelope(fun, t_span, y0, max_step=1000, \
-                           T_guess=None, T=T, jac=jac, fun_method='BDF',\
+    print('-' * 81)
+    be_solver = BEEnvelope(boost, t_span, y0, max_step=1000, \
+                           T_guess=None, T=T, jac=boost.J, \
+                           fun_method=solve_ivp_switch, \
                            rtol=1e-2, atol=1e-3, \
                            fun_rtol=fun_rtol, fun_atol=fun_atol)
-    trap_solver = TrapEnvelope(fun, t_span, y0, max_step=1000, \
-                               T_guess=None, T=T, jac=jac, fun_method='BDF',\
-                               rtol=1e-2, atol=1e-3, \
-                               fun_rtol=fun_rtol, fun_atol=fun_atol)
-    print('-' * 81)
     sol_be = be_solver.solve()
     print('-' * 81)
+    trap_solver = TrapEnvelope(boost, t_span, y0, max_step=1000, \
+                               T_guess=None, T=T, jac=boost.J, \
+                               fun_method=solve_ivp_switch, \
+                               rtol=1e-2, atol=1e-3, \
+                               fun_rtol=fun_rtol, fun_atol=fun_atol)
     sol_trap = trap_solver.solve()
     print('-' * 81)
 
     stdout.write('Integrating the original system... ')
     stdout.flush()
-    sol = solve_ivp(fun, t_span, y0, method='BDF', jac=jac, rtol=fun_rtol, atol=fun_atol)
+    sol = solve_ivp_switch(boost, t_span, y0, method='BDF',
+                           jac=boost.J, rtol=fun_rtol, atol=fun_atol)
     stdout.write('done.\n')
 
     labels = [r'$V_C$ (V)', r'$I_L$ (A)']
@@ -166,5 +188,5 @@ def variational():
 
 if __name__ == '__main__':
     system()
-    #envelope()
+    envelope()
     #variational()
