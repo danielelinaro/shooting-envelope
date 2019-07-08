@@ -1,4 +1,6 @@
 
+__all__ = ['forward_euler', 'backward_euler', 'trapezoidal', 'backward_euler_var_step', 'trapezoidal_var_step']
+
 import numpy as np
 from numpy.linalg import norm
 

@@ -1,9 +1,13 @@
 
+
+__all__ = ['BaseShooting', 'Shooting', 'EnvelopeShooting']
+
+
 import numpy as np
 from numpy.linalg import solve
 from scipy.integrate import solve_ivp
-from . import common
 from . import envelope
+#from envelope import common
 
 
 class BaseShooting (object):
@@ -20,7 +24,7 @@ class BaseShooting (object):
             self.jac_factor = None
             def jac(t,y):
                 f = self.fun(t,y)
-                J,self.jac_factor = common.num_jac(self.fun, t, y, f, self.atol, self.jac_factor, None)
+                J,self.jac_factor = envelope.num_jac(self.fun, t, y, f, self.atol, self.jac_factor, None)
                 return J
         self.jac = jac
 
@@ -123,7 +127,7 @@ class Shooting (BaseShooting):
 
 class EnvelopeShooting (BaseShooting):
 
-    def __init__(self, fun, N, T, estimate_T, small_T, jac=None, shooting_tol=1e-3,
+    def __init__(self, fun, N, T, estimate_T, small_T, jac, shooting_tol=1e-3,
                  env_rtol=1e-1, env_atol=1e-3, fun_rtol=1e-5, fun_atol=1e-7, env_solver=None, ax=None):
         super(EnvelopeShooting, self).__init__(fun, N, T, estimate_T, jac,
                                                shooting_tol, fun_rtol, fun_atol, ax)
@@ -143,8 +147,8 @@ class EnvelopeShooting (BaseShooting):
 
 
     def _integrate(self, y0):
-        solver = envelope.VariationalEnvelope(self.fun, self.jac, y0[:self.N],
-                                              self.T_large, self.T_small,
-                                              rtol=self.env_rtol, atol=self.env_atol,
-                                              env_solver=self.env_solver)
+        solver = self.env_solver(self.fun, [0,self.T_large], y0[:self.N], \
+                                 T_guess=None, T=self.T_small, jac=self.jac, \
+                                 rtol=self.env_rtol, atol=self.env_atol, \
+                                 is_variational=True)
         return solver.solve()

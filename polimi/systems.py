@@ -1,4 +1,6 @@
 
+__all__ = ['boost', 'boost_jac', 'vdp', 'vdp_jac', 'vdp_extrema', 'vdp_auto', 'hr']
+
 import numpy as np
 
 def jacobian_finite_differences(fun,t,y):
@@ -12,6 +14,27 @@ def jacobian_finite_differences(fun,t,y):
         pert = fun(t,y+dy)
         J[:,i] = (pert-ref)/eps
     return J
+
+
+def boost_matrixes(R, L, C, Rs, Vin):
+    A1 = np.array([ [-1/(R*C), 0],   [0, -Rs/L]    ])
+    A2 = np.array([ [-1/(R*C), 1/C], [-1/L, -Rs/L] ])
+    B  = np.array([0, Vin/L])
+    return A1, A2, B
+
+def boost(t, y, T=20e-6, DC=0.5, R=5, L=10e-6, C=47e-6, Rs=0, Vin=5):
+    A1, A2, B = boost_matrixes(R, L, C, Rs, Vin)
+    if (t % T) < (DC * T):
+        A = A1
+    else:
+        A = A2
+    return np.matmul(A,y) + B
+
+def boost_jac(t, y, T=20e-6, DC=0.5, R=5, L=10e-6, C=47e-6, Rs=0, Vin=5):
+    A1, A2, _ = boost_matrixes(R, L, C, Rs, Vin)
+    if (t % T) < (DC * T):
+        return A1
+    return A2
 
 def vdp(t,y,epsilon,A,T):
     F = [1./tt for tt in T]
