@@ -58,7 +58,7 @@ class EnvelopeSolver (object):
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
                  vars_to_use=[], is_variational=False, T_var=None,
-                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3):
+                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3, **kwargs):
 
         # number of dimensions of the system
         self.n_dim = len(y0)
@@ -92,6 +92,7 @@ class EnvelopeSolver (object):
         self.original_jac_sparsity = jac_sparsity
         self.original_fun_vectorized = vectorized
         self.original_fun_method = fun_method
+        self.original_fun_kwargs = kwargs
 
         # how many period of the fast system have been integrated
         self.original_fun_period_eval = 0
@@ -369,11 +370,12 @@ class EnvelopeSolver (object):
         if not self.estimate_T:
             if not type(self.original_fun_method) is str:
                 sol = self.original_fun_method(self.original_fun, [t,t+self.T], y, \
-                                               method='BDF', jac=self.original_jac, \
+                                               jac=self.original_jac, \
                                                jac_sparsity=self.original_jac_sparsity,
                                                vectorized=self.original_fun_vectorized,
                                                rtol=self.original_fun_rtol,
-                                               atol=self.original_fun_atol)
+                                               atol=self.original_fun_atol,
+                                               **self.original_fun_kwargs)
             elif self.original_fun_method == 'BDF':
                 sol = solve_ivp(self.original_fun,[t,t+self.T],y,
                                 self.original_fun_method,jac=self.original_jac,
@@ -506,12 +508,12 @@ class BEEnvelope (EnvelopeSolver):
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
                  vars_to_use=[], is_variational=False, T_var=None,
-                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3):
+                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3, **kwargs):
         super(BEEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
                                          fun_rtol, fun_atol, dTtol, rtol, atol,
                                          jac, jac_sparsity, vectorized, fun_method,
                                          vars_to_use, is_variational, T_var,
-                                         T_var_guess, var_rtol, var_atol)
+                                         T_var_guess, var_rtol, var_atol, **kwargs)
 
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
         #return fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, xtol=FSOLVE_XTOL)
@@ -547,12 +549,12 @@ class TrapEnvelope (EnvelopeSolver):
                  fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
                  jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
                  vars_to_use=[], is_variational=False, T_var=None,
-                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3):
+                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3, **kwargs):
         super(TrapEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
                                            fun_rtol, fun_atol, dTtol, rtol, atol,
                                            jac, jac_sparsity, vectorized, fun_method,
                                            vars_to_use, is_variational, T_var,
-                                           T_var_guess, var_rtol, var_atol)
+                                           T_var_guess, var_rtol, var_atol, **kwargs)
         self.df_cur = np.zeros(self.n_dim)
         if self.is_variational:
             self.df_cur_var = np.zeros(self.n_dim**2)

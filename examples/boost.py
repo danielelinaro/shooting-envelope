@@ -86,14 +86,16 @@ def envelope():
                            T_guess=None, T=T, jac=boost.J, \
                            fun_method=solve_ivp_switch, \
                            rtol=1e-2, atol=1e-3, \
-                           fun_rtol=fun_rtol, fun_atol=fun_atol)
+                           fun_rtol=fun_rtol, fun_atol=fun_atol, \
+                           method='BDF')
     sol_be = be_solver.solve()
     print('-' * 81)
     trap_solver = TrapEnvelope(boost, t_span, y0, max_step=1000, \
                                T_guess=None, T=T, jac=boost.J, \
                                fun_method=solve_ivp_switch, \
                                rtol=1e-2, atol=1e-3, \
-                               fun_rtol=fun_rtol, fun_atol=fun_atol)
+                               fun_rtol=fun_rtol, fun_atol=fun_atol, \
+                               method='BDF')
     sol_trap = trap_solver.solve()
     print('-' * 81)
 
