@@ -9,7 +9,7 @@ __all__ = ['SwitchingSystem', 'Boost', 'solve_ivp_switch']
 
 class SwitchingSystem (object):
 
-    def __init__(self, vector_field_index=None):
+    def __init__(self, vector_field_index=0):
         self.vector_field_index = vector_field_index
 
 
@@ -43,8 +43,9 @@ class SwitchingSystem (object):
 
 class Boost (SwitchingSystem):
 
-    def __init__(self, t0, T=20e-6, DC=0.5, ki=1.5, Vref=5, Vin=5, R=5, L=10e-6, C=47e-6, Rs=0, clock_phase=0):
-        super(Boost, self).__init__(0)
+    def __init__(self, vector_field_index=0, T=20e-6, DC=0.5, ki=1.5, Vref=5, Vin=5,
+                 R=5, L=10e-6, C=47e-6, Rs=0, clock_phase=0):
+        super(Boost, self).__init__(vector_field_index)
 
         self.T = T
         self.F = 1./T

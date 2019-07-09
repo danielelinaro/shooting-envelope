@@ -24,8 +24,7 @@ def system():
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    boost = Boost(t0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
-    boost.vector_field_index = 0
+    boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
 
     print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
     sol_a = solve_ivp_switch(boost, t_span, y0, \
@@ -60,7 +59,6 @@ def envelope():
     Vref = 5
 
     boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
-    boost.vector_field_index = 0
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
