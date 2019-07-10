@@ -6,14 +6,36 @@ from scipy.integrate import solve_ivp
 __all__ = ['SwitchingSystem', 'Boost', 'solve_ivp_switch']
 
 
+def variational_system(fun, jac, t, y, T):
+    N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
+    J = jac(t*T,y[:N])
+    phi = np.reshape(y[N:N+N**2],(N,N))
+    return np.concatenate((T * fun(t*T, y[:N]), \
+                           T * np.matmul(J,phi).flatten()))
+
+
+
 
 class SwitchingSystem (object):
 
-    def __init__(self, vector_field_index=0):
+    def __init__(self, vector_field_index=0, with_variational=False, variational_T=None):
         self.vector_field_index = vector_field_index
+        self.with_variational = with_variational
+        self._variational_T = variational_T
 
 
     def __call__(self, t, y):
+        if not self.with_variational:
+            return self._fun(t,y)
+        T = self.variational_T
+        N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
+        J = self.J(t * T, y[:N])
+        phi = np.reshape(y[N:N+N**2], (N,N))
+        return np.concatenate((T * self._fun(t*T, y[:N]), \
+                               T * np.matmul(J,phi).flatten()))
+
+
+    def _fun(self, t, y):
         raise NotImplementedError
 
 
@@ -36,6 +58,30 @@ class SwitchingSystem (object):
 
 
     @property
+    def with_variational(self):
+        return self._with_variational
+
+
+    @with_variational.setter
+    def with_variational(self, value):
+        if not isinstance(value, bool):
+            raise ValueError('value must be of boolean type')
+        self._with_variational = value
+
+
+    @property
+    def variational_T(self):
+        return self._variational_T
+
+
+    @variational_T.setter
+    def variational_T(self, T):
+        if T <= 0:
+            raise ValueError('T must be greater than 0')
+        self._variational_T = T
+
+
+    @property
     def event_functions(self):
         raise NotImplementedError
 
@@ -43,9 +89,17 @@ class SwitchingSystem (object):
 
 class Boost (SwitchingSystem):
 
-    def __init__(self, vector_field_index=0, T=20e-6, DC=0.5, ki=1.5, Vref=5, Vin=5,
-                 R=5, L=10e-6, C=47e-6, Rs=0, clock_phase=0):
-        super(Boost, self).__init__(vector_field_index)
+    def __init__(self, vector_field_index=0,
+                 T=20e-6, DC=0.5, ki=1.5, Vref=5, Vin=5, R=5,
+                 L=10e-6, C=47e-6, Rs=0, clock_phase=0,
+                 with_variational=False, variational_T=1):
+
+        if not with_variational:
+            if not variational_T is None and variational_T != 1:
+                print('with_variational is False, ignoring value of variational_T')
+            variational_T = 1
+
+        super(Boost, self).__init__(vector_field_index, with_variational, variational_T)
 
         self.T = T
         self.F = 1./T
@@ -62,13 +116,13 @@ class Boost (SwitchingSystem):
         self._make_matrixes()
 
         self._event_functions = [lambda t,y: Boost.manifold(self, t, y), \
-                                 lambda t,y: Boost.clock(self, t, y)]
+                                 lambda t,y: Boost.clock(self, t*self.variational_T, y)]
         for event_fun in self._event_functions:
             event_fun.direction = 1
             event_fun.terminal = 1
 
 
-    def __call__(self, t, y):
+    def _fun(self, t, y):
         return np.matmul(self.A[self.vector_field_index],y) + self.B
 
 
@@ -138,8 +192,8 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
         t_next = np.inf
         ev_idx = None
         for i,t_ev in enumerate(sol['t_events']):
-            if len(t_ev) > 0 and t_ev[0] != t_cur and np.abs(t_ev[0] - t_next) > 1e-10:
-                t_next = t_ev[0]
+            if len(t_ev) > 0 and t_ev[-1] != t_cur and np.abs(t_ev[-1] - t_next) > 1e-10:
+                t_next = t_ev[-1]
                 ev_idx = i
         if ev_idx is None:
             t_next = sol['t'][-1]

@@ -118,6 +118,54 @@ def envelope():
     plt.show()
 
 
+def variational_integration():
+    T = 20e-6
+    DC = 0.5
+    ki = 1
+    Vin = 5
+    Vref = 5
+
+    boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost.vector_field_index = 0
+
+    fun_rtol = 1e-10
+    fun_atol = 1e-12
+
+    y0 = np.array([Vin,1])
+    t_tran = 50*T
+
+    print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
+    sol = solve_ivp_switch(boost, [0,t_tran], y0, \
+                           method='BDF', jac=boost.J, \
+                           rtol=fun_rtol, atol=fun_atol)
+    print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
+    #plt.plot(sol['t']*1e6,sol['y'][0],'k')
+    #plt.plot(sol['t']*1e6,sol['y'][1],'r')
+    #plt.show()
+
+    y0 = sol['y'][:,-1]
+
+    T_large = 100*T
+    T_small = T
+    boost.with_variational = True
+    boost.variational_T = T_large
+
+    t_span_var = [0,1]
+    y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
+
+    sol = solve_ivp_switch(boost, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+
+    plt.subplot(1,2,1)
+    plt.plot(sol['t'],sol['y'][0],'k')
+    plt.plot(sol['t'],sol['y'][1],'r')
+    plt.subplot(1,2,2)
+    plt.plot(sol['t'],sol['y'][2],'k')
+    plt.show()
+
+    eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
+    print('         correct eigenvalues:', eig)
+
+
 def variational():
 
     def variational_system(fun, jac, t, y, T):
@@ -187,6 +235,7 @@ def variational():
 
 
 if __name__ == '__main__':
-    system()
-    envelope()
+    #system()
+    #envelope()
+    variational_integration()
     #variational()
