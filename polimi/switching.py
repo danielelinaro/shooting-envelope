@@ -18,17 +18,21 @@ def variational_system(fun, jac, t, y, T):
 
 class SwitchingSystem (object):
 
-    def __init__(self, vector_field_index=0, with_variational=False, variational_T=None):
+    def __init__(self, n_dim, vector_field_index, with_variational=False, variational_T=None):
+        self.n_dim = n_dim
         self.vector_field_index = vector_field_index
+        self.event_functions = []
+        self.event_derivatives = []
+        self.event_gradients = []
         self.with_variational = with_variational
-        self._variational_T = variational_T
+        self.variational_T = variational_T
 
 
     def __call__(self, t, y):
         if not self.with_variational:
             return self._fun(t,y)
         T = self.variational_T
-        N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
+        N = self.n_dim
         J = self.J(t * T, y[:N])
         phi = np.reshape(y[N:N+N**2], (N,N))
         return np.concatenate((T * self._fun(t*T, y[:N]), \
@@ -43,7 +47,29 @@ class SwitchingSystem (object):
         raise NotImplementedError
 
 
-    def handle_event(self, event_index):
+    def handle_event(self, event_index, t, y):
+        if self.with_variational:
+            f_before = np.array(self._fun(t,y[:self.n_dim]), ndmin=2).transpose()
+
+        self._handle_event(event_index, t, y)
+
+        if self.with_variational:
+            f_after = np.array(self._fun(t,y[:self.n_dim]), ndmin=2).transpose()
+            df = f_after - f_before
+            dh = self.event_derivatives[event_index](t,y)
+            eta_T = self.event_gradients[event_index](t,y).transpose()
+            S = np.eye(self.n_dim) + np.matmul(df / (np.matmul(eta_T, f_before) + dh), eta_T)
+        else:
+            S = None
+
+        return S
+
+
+    def _handle_event(self, event_index, t, y):
+        raise NotImplementedError
+
+
+    def _check_vector_field_index(self, index):
         raise NotImplementedError
 
 
@@ -54,6 +80,8 @@ class SwitchingSystem (object):
 
     @vector_field_index.setter
     def vector_field_index(self, index):
+        if not self._check_vector_field_index(index):
+            raise ValueError('Wrong value of vector field index')
         self._vector_field_index = index
 
 
@@ -83,14 +111,38 @@ class SwitchingSystem (object):
 
     @property
     def event_functions(self):
-        raise NotImplementedError
+        return self._event_functions
 
+
+    @event_functions.setter
+    def event_functions(self, events):
+        self._event_functions = events
+
+
+    @property
+    def event_derivatives(self):
+        return self._event_derivatives
+
+
+    @event_derivatives.setter
+    def event_derivatives(self, derivatives):
+        self._event_derivatives = derivatives
+
+
+    @property
+    def event_gradients(self):
+        return self._event_gradients
+
+
+    @event_gradients.setter
+    def event_gradients(self, gradients):
+        self._event_gradients = gradients
 
 
 class Boost (SwitchingSystem):
 
-    def __init__(self, vector_field_index=0,
-                 T=20e-6, DC=0.5, ki=1.5, Vref=5, Vin=5, R=5,
+    def __init__(self, vector_field_index,
+                 T=20e-6, ki=1.5, Vref=5, Vin=5, R=5,
                  L=10e-6, C=47e-6, Rs=0, clock_phase=0,
                  with_variational=False, variational_T=1):
 
@@ -99,12 +151,11 @@ class Boost (SwitchingSystem):
                 print('with_variational is False, ignoring value of variational_T')
             variational_T = 1
 
-        super(Boost, self).__init__(vector_field_index, with_variational, variational_T)
+        super(Boost, self).__init__(2, vector_field_index, with_variational, variational_T)
 
         self.T = T
         self.F = 1./T
         self.phi = clock_phase
-        self.DC = DC
         self.ki = ki
         self.Vref = Vref
         self.Vin = Vin
@@ -115,11 +166,17 @@ class Boost (SwitchingSystem):
 
         self._make_matrixes()
 
-        self._event_functions = [lambda t,y: Boost.manifold(self, t, y), \
-                                 lambda t,y: Boost.clock(self, t*self.variational_T, y)]
+        self.event_functions = [lambda t,y: Boost.manifold(self, t, y), \
+                                lambda t,y: Boost.clock(self, t*self.variational_T, y)]
         for event_fun in self._event_functions:
             event_fun.direction = 1
             event_fun.terminal = 1
+
+        self.event_derivatives = [lambda t,y: Boost.manifold_der(self, t*self.variational_T, y),
+                                  lambda t,y: Boost.clock_der(self, t*self.variational_T, y)]
+
+        self.event_gradients = [lambda t,y: Boost.manifold_grad(self, t*self.variational_T, y),
+                                lambda t,y: Boost.clock_grad(self, t*self.variational_T, y)]
 
 
     def _fun(self, t, y):
@@ -130,33 +187,38 @@ class Boost (SwitchingSystem):
         return self.A[self.vector_field_index]
 
 
-    def handle_event(self, event_index):
+    def _handle_event(self, event_index, t, y):
         self.vector_field_index = 1 - event_index
 
 
     def clock(self, t, y):
-        return np.sin(2*np.pi*self.F*(t-self.phi))
+        return np.sin(2*np.pi*self.F*t-self.phi)
+
+
+    def clock_der(self, t, y):
+        return 2 * np.pi * self.F * np.cos(2*np.pi*self.F*t-self.phi)
+
+
+    def clock_grad(self, t, y):
+        return np.array([0, 0], ndmin=2).transpose()
 
 
     def manifold(self, t, y):
         return self.ki * y[1] - self.Vref
 
 
-    @property
-    def vector_field_index(self):
-        return self._vector_field_index
+    def manifold_der(self, t, y):
+        return 0
 
 
-    @vector_field_index.setter
-    def vector_field_index(self, index):
-        if not index in (0,1):
-            raise ValueError('index must be either 0 or 1')
-        self._vector_field_index = index
+    def manifold_grad(self, t, y):
+        return np.array([0,self.ki], ndmin=2).transpose()
 
 
-    @property
-    def event_functions(self):
-        return self._event_functions
+    def _check_vector_field_index(self, index):
+        if index in (0,1):
+            return True
+        return False
 
 
     def _make_matrixes(self):
@@ -199,9 +261,13 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
             t_next = sol['t'][-1]
             y_next = sol['y'][:,-1]
         else:
-            if ev_idx < n_events-1:
-                sys.handle_event(ev_idx)
             y_next = sol['sol'](t_next)
+            if ev_idx < n_events-1:
+                S = sys.handle_event(ev_idx, t_next, y_next)
+                if sys.with_variational:
+                    N = sys.n_dim
+                    phi = np.matmul(S, np.reshape(y_next[N:], (N,N)))
+                    y_next[N:] = phi.flatten()
         idx, = np.where(sol['t'] < t_next)
         t = np.append(t, sol['t'][idx])
         t = np.append(t, t_next)

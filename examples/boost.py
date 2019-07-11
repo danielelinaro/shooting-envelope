@@ -8,9 +8,12 @@ from polimi.envelope import BEEnvelope, TrapEnvelope
 from polimi.switching import Boost, solve_ivp_switch
 
 
+# for saving data
+pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=1)
+
+
 def system():
     T = 20e-6
-    DC = 0.5
     ki = 1
     Vin = 5
     Vref = 5
@@ -24,7 +27,7 @@ def system():
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
 
     print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
     sol_a = solve_ivp_switch(boost, t_span, y0, \
@@ -53,12 +56,11 @@ def system():
 
 def envelope():
     T = 20e-6
-    DC = 0.5
     ki = 1
     Vin = 5
     Vref = 5
 
-    boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
@@ -120,33 +122,36 @@ def envelope():
 
 def variational_integration():
     T = 20e-6
-    DC = 0.5
     ki = 1
     Vin = 5
     Vref = 5
 
-    boost = Boost(0, T, DC, ki, Vin=Vin, Vref=Vref, clock_phase=0)
-    boost.vector_field_index = 0
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
     y0 = np.array([Vin,1])
-    t_tran = 50*T
+    t_tran = 100*T
 
     print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
     sol = solve_ivp_switch(boost, [0,t_tran], y0, \
                            method='BDF', jac=boost.J, \
                            rtol=fun_rtol, atol=fun_atol)
     print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
-    #plt.plot(sol['t']*1e6,sol['y'][0],'k')
-    #plt.plot(sol['t']*1e6,sol['y'][1],'r')
-    #plt.show()
+    plt.figure()
+    ax = plt.subplot(2,1,1)
+    plt.plot(sol['t']*1e6,sol['y'][0],'k')
+    plt.ylabel(r'$V_C$ (V)')
+    plt.subplot(2,1,2,sharex=ax)
+    plt.plot(sol['t']*1e6,sol['y'][1],'r')
+    plt.xlabel(r'Time ($\mu$s)')
+    plt.ylabel(r'$I_L$ (A)')
+    plt.show()
 
     y0 = sol['y'][:,-1]
 
     T_large = 100*T
-    T_small = T
     boost.with_variational = True
     boost.variational_T = T_large
 
@@ -155,15 +160,32 @@ def variational_integration():
 
     sol = solve_ivp_switch(boost, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
 
-    plt.subplot(1,2,1)
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(sol['t'],sol['y'][1],'r')
-    plt.subplot(1,2,2)
-    plt.plot(sol['t'],sol['y'][2],'k')
-    plt.show()
+    #np.savetxt('boost_variational.txt', pack(sol['t'],sol['y']), fmt='%.3e')
 
     eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
-    print('         correct eigenvalues:', eig)
+    print('eigenvalues:', eig)
+
+    plt.figure()
+    ax = plt.subplot(2,2,1)
+    plt.plot(sol['t'],sol['y'][0],'k')
+    plt.ylabel(r'$V_C$ (V)')
+    plt.subplot(2,2,3,sharex=ax)
+    plt.plot(sol['t'],sol['y'][1],'r')
+    plt.xlabel('Normalized time')
+    plt.ylabel(r'$I_L$ (A)')
+
+    colors = ['g','b','m','y']
+    plt.subplot(2,2,2,sharex=ax)
+    for i in range(2):
+        plt.plot(sol['t'],sol['y'][i+2],colors[i],label=r'$y_{}$'.format(i+1))
+    plt.legend(loc='best')
+    
+    plt.subplot(2,2,4,sharex=ax)
+    for i in range(2):
+        plt.plot(sol['t'],sol['y'][i+4],colors[i+2],label=r'$y_{}$'.format(i+3))
+    plt.legend(loc='best')
+    plt.xlabel('Normalized time')
+    plt.show()
 
 
 def variational():
