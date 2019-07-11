@@ -195,7 +195,7 @@ def variational():
         J = jac(t*T,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
         return np.concatenate((T * fun(t*T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
+                               T * (J @ phi).flatten()))
 
     T = 20e-6
     DC = 0.45

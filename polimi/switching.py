@@ -6,16 +6,6 @@ from scipy.integrate import solve_ivp
 __all__ = ['SwitchingSystem', 'Boost', 'solve_ivp_switch']
 
 
-def variational_system(fun, jac, t, y, T):
-    N = int((-1 + np.sqrt(1 + 4*len(y))) / 2)
-    J = jac(t*T,y[:N])
-    phi = np.reshape(y[N:N+N**2],(N,N))
-    return np.concatenate((T * fun(t*T, y[:N]), \
-                           T * np.matmul(J,phi).flatten()))
-
-
-
-
 class SwitchingSystem (object):
 
     def __init__(self, n_dim, vector_field_index, with_variational=False, variational_T=None):
@@ -36,7 +26,7 @@ class SwitchingSystem (object):
         J = self.J(t * T, y[:N])
         phi = np.reshape(y[N:N+N**2], (N,N))
         return np.concatenate((T * self._fun(t*T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
+                               T * (J @ phi).flatten()))
 
 
     def _fun(self, t, y):
@@ -58,7 +48,7 @@ class SwitchingSystem (object):
             df = f_after - f_before
             dh = self.event_derivatives[event_index](t,y)
             eta_T = self.event_gradients[event_index](t,y).transpose()
-            S = np.eye(self.n_dim) + np.matmul(df / (np.matmul(eta_T, f_before) + dh), eta_T)
+            S = np.eye(self.n_dim) + ((df / ((eta_T @ f_before) + dh)) @ eta_T)
         else:
             S = None
 
@@ -180,7 +170,7 @@ class Boost (SwitchingSystem):
 
 
     def _fun(self, t, y):
-        return np.matmul(self.A[self.vector_field_index],y) + self.B
+        return (self.A[self.vector_field_index] @ y) + self.B
 
 
     def J(self, t, y):
@@ -266,7 +256,7 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
                 S = sys.handle_event(ev_idx, t_next, y_next)
                 if sys.with_variational:
                     N = sys.n_dim
-                    phi = np.matmul(S, np.reshape(y_next[N:], (N,N)))
+                    phi = S @ np.reshape(y_next[N:], (N,N))
                     y_next[N:] = phi.flatten()
         idx, = np.where(sol['t'] < t_next)
         t = np.append(t, sol['t'][idx])

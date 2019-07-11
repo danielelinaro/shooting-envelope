@@ -28,7 +28,7 @@ def boost(t, y, T=20e-6, DC=0.5, R=5, L=10e-6, C=47e-6, Rs=0, Vin=5):
         A = A1
     else:
         A = A2
-    return np.matmul(A,y) + B
+    return (A @ y) + B
 
 def boost_jac(t, y, T=20e-6, DC=0.5, R=5, L=10e-6, C=47e-6, Rs=0, Vin=5):
     A1, A2, _ = boost_matrixes(R, L, C, Rs, Vin)

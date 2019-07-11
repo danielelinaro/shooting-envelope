@@ -12,12 +12,12 @@ def variational_system(fun, jac, t, y, T):
     J = jac(t*T,y[:N])
     phi = np.reshape(y[N:N+N**2],(N,N))
     return np.concatenate((T * fun(t*T, y[:N]), \
-                           T * np.matmul(J,phi).flatten()))
+                           T * (J @ phi).flatten()))
 
 
 def linear(t,y,A,B,T):
     u = lambda t: np.array([np.cos(2*np.pi*t/TT) for TT in T])
-    return np.matmul(A,y) + np.matmul(B,u(t))
+    return (A @ y) + (B @ u(t))
 
 
 def variational_linear():
@@ -182,7 +182,7 @@ def variational_system_reduced(jac, t, y, interp, T):
     N = int(np.sqrt(len(y)))
     phi = np.reshape(y,(N,N))
     J = jac(t,interp(t))
-    return T * np.matmul(J,phi).flatten()
+    return T * (J @ phi).flatten()
 
 
 def hybrid():

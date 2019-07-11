@@ -41,9 +41,9 @@ class BaseShooting (object):
         J = self.jac(t,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
         ydot = np.concatenate((T * self.fun(t * T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
+                               T * (J @ phi).flatten()))
         if self.estimate_T:
-            ydot = np.concatenate((ydot, T * np.matmul(J,y[-N:]) + self.fun(t,y[:N])))
+            ydot = np.concatenate((ydot, T * (J @ y[-N:]) + self.fun(t,y[:N])))
         return ydot
 
 

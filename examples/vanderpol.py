@@ -13,7 +13,7 @@ def main():
         J = jac(t*T,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
         return np.concatenate((T * fun(t*T, y[:N]), \
-                               T * np.matmul(J,phi).flatten()))
+                               T * (J @ phi).flatten()))
 
     epsilon = 1e-3
     A = [10,1]
