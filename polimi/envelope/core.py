@@ -223,8 +223,7 @@ class EnvelopeSolver (object):
             sol['y'][:self.n_dim,:] = self.y[:,idx]
             sol['y'][self.n_dim:,0] = np.eye(self.n_dim).flatten()
             for i,mat in enumerate(sol['M']):
-                sol['y'][self.n_dim:,i+1] = np.dot(np.reshape(sol['y'][self.n_dim:,i],\
-                                                              (self.n_dim,self.n_dim)), mat).flatten()
+                sol['y'][self.n_dim:,i+1] = (mat @ np.reshape(sol['y'][self.n_dim:,i],(self.n_dim,self.n_dim))).flatten()
             sol['var'] = {'t': np.array(self.t_var), \
                           'y': np.array([y.flatten() for y in self.y_var]).transpose()}
 
@@ -283,11 +282,11 @@ class EnvelopeSolver (object):
             t2 = t_cur + n_periods_var * self.T_var
             y0_var = np.eye(self.n_dim)
             for mat in self.mono_mat:
-                y0_var = np.matmul(y0_var,mat)
-            y1_var = np.matmul(y0_var,M_var)
+                y0_var = mat @ y0_var
+            y1_var = M_var @ y0_var
             y2_var = y0_var.copy()
             for i in range(n_periods_var):
-                y2_var = np.matmul(y2_var,M_var)
+                y2_var = M_var @ y2_var
             if n_periods_var > 1:
                 scale_var = self.var_atol + self.var_rtol * np.abs(y2_var.flatten())
                 lte_var,coeff_var,H_new_var = self._compute_variational_LTE(t0, t1, t2,
@@ -346,8 +345,8 @@ class EnvelopeSolver (object):
             if self.compute_variational_LTE:
                 y0_var = np.eye(self.n_dim)
                 for mat in self.mono_mat:
-                    y0_var = np.matmul(y0_var,mat)
-                y1_var = np.matmul(y0_var,M_var)
+                    y0_var = M_var @ y0_var
+                y1_var = M_var @ y0_var
                 y2_var = y1_var.copy()
                 self.t_var.append(self.t[-1])
                 self.t_var.append(self.t[-1] + self.T_var)
@@ -445,7 +444,7 @@ class EnvelopeSolver (object):
         J = self.original_jac(t,y[:N])
         phi = np.reshape(y[N:N+N**2],(N,N))
         return np.concatenate((self.original_fun(t, y[:self.n_dim]), \
-                               T * np.matmul(J,phi).flatten()))
+                               T * (J @ phi).flatten()))
 
 
     def _compute_monodromy_matrix(self, t, y, T_var_guess=None):
