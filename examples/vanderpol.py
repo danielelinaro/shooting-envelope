@@ -2,10 +2,40 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
+
+from polimi.switching import VanderPol
 from polimi.envelope import BEEnvelope, TrapEnvelope
 
+def system():
+    epsilon = 1e-3
+    A = [10,1]
+    T = [4,400]
 
-def main():
+    t0 = 0
+    t_end = np.max(T)
+    t_span = np.array([t0, t_end])
+
+    y0 = np.array([-2,1])
+
+    fun_rtol = 1e-10
+    fun_atol = 1e-12
+
+    vdp = VanderPol(epsilon, A, T)
+
+    sol = solve_ivp(vdp, t_span, y0, method='BDF', \
+                    jac=vdp.J, rtol=fun_rtol, atol=fun_atol)
+
+    ax = plt.subplot(2, 1, 1)
+    plt.plot(sol['t'], sol['y'][0], 'k')
+    plt.ylabel(r'$V_C$ (V)')
+    plt.subplot(2, 1, 2, sharex=ax)
+    plt.plot(sol['t'], sol['y'][1], 'k')
+    plt.xlabel('Time (s)')
+    plt.ylabel(r'$I_L$ (A)')
+    plt.show()
+
+
+def variational_envelope():
     from polimi import vdp, vdp_jac
 
     def variational_system(fun, jac, t, y, T):
@@ -72,4 +102,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    #system()
+    variational_envelope()

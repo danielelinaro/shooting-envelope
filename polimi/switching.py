@@ -3,17 +3,13 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 
-__all__ = ['SwitchingSystem', 'Boost', 'solve_ivp_switch']
+__all__ = ['DynamicalSystem', 'SwitchingSystem', 'VanderPol', 'Boost', 'solve_ivp_switch']
 
 
-class SwitchingSystem (object):
+class DynamicalSystem (object):
 
-    def __init__(self, n_dim, vector_field_index, with_variational=False, variational_T=None):
+    def __init__(self, n_dim, with_variational=False, variational_T=None):
         self.n_dim = n_dim
-        self.vector_field_index = vector_field_index
-        self.event_functions = []
-        self.event_derivatives = []
-        self.event_gradients = []
         self.with_variational = with_variational
         self.variational_T = variational_T
 
@@ -35,6 +31,41 @@ class SwitchingSystem (object):
 
     def J(self, t, y):
         raise NotImplementedError
+
+
+    @property
+    def with_variational(self):
+        return self._with_variational
+
+
+    @with_variational.setter
+    def with_variational(self, value):
+        if not isinstance(value, bool):
+            raise ValueError('value must be of boolean type')
+        self._with_variational = value
+
+
+    @property
+    def variational_T(self):
+        return self._variational_T
+
+
+    @variational_T.setter
+    def variational_T(self, T):
+        if T <= 0:
+            raise ValueError('T must be greater than 0')
+        self._variational_T = T
+
+
+class SwitchingSystem (DynamicalSystem):
+
+    def __init__(self, n_dim, vector_field_index, with_variational=False, variational_T=None):
+        super(SwitchingSystem, self).__init__(n_dim, with_variational, variational_T)
+        self.n_dim = n_dim
+        self.vector_field_index = vector_field_index
+        self.event_functions = []
+        self.event_derivatives = []
+        self.event_gradients = []
 
 
     def handle_event(self, event_index, t, y):
@@ -76,30 +107,6 @@ class SwitchingSystem (object):
 
 
     @property
-    def with_variational(self):
-        return self._with_variational
-
-
-    @with_variational.setter
-    def with_variational(self, value):
-        if not isinstance(value, bool):
-            raise ValueError('value must be of boolean type')
-        self._with_variational = value
-
-
-    @property
-    def variational_T(self):
-        return self._variational_T
-
-
-    @variational_T.setter
-    def variational_T(self, T):
-        if T <= 0:
-            raise ValueError('T must be greater than 0')
-        self._variational_T = T
-
-
-    @property
     def event_functions(self):
         return self._event_functions
 
@@ -127,6 +134,48 @@ class SwitchingSystem (object):
     @event_gradients.setter
     def event_gradients(self, gradients):
         self._event_gradients = gradients
+
+
+class VanderPol (DynamicalSystem):
+
+    def __init__(self, epsilon, A, T, with_variational=False, variational_T=1):
+        super(VanderPol, self).__init__(2, with_variational, variational_T)
+
+        self.epsilon = epsilon
+
+        if np.isscalar(A):
+            self.A = np.array([A])
+        elif isinstance(A, list) or isinstance(A, tuple):
+            self.A = np.array(A)
+        else:
+            self.A = A
+
+        if np.isscalar(T):
+            self.T = np.array([T])
+        elif isinstance(T, list) or isinstance(T, tuple):
+            self.T = np.array(T)
+        else:
+            self.T = T
+
+        self.F = np.array([1./t for t in T])
+        self.n_forcing = len(self.F)
+
+
+    def _fun(self, t, y):
+        ydot = np.array([
+            y[1],
+            self.epsilon*(1-y[0]**2)*y[1] - y[0]
+        ])
+        for i in range(self.n_forcing):
+            ydot[1] += self.A[i] * np.cos(2 * np.pi * self.F[i] * t)
+        return ydot
+
+
+    def J(self, t, y):
+        return np.array([
+            [0, 1],
+            [-2 * self.epsilon * y[0] * y[1] - 1, self.epsilon * (1 - y[0] ** 2)]
+        ])
 
 
 class Boost (SwitchingSystem):
