@@ -23,7 +23,7 @@ def system():
     vdp = VanderPol(epsilon, A, T)
 
     sol = solve_ivp(vdp, t_span, y0, method='BDF', \
-                    jac=vdp.J, rtol=fun_rtol, atol=fun_atol)
+                    jac=vdp.jac, rtol=fun_rtol, atol=fun_atol)
 
     ax = plt.subplot(2, 1, 1)
     plt.plot(sol['t'], sol['y'][0], 'k')

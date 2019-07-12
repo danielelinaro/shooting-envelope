@@ -4,6 +4,7 @@ from scipy.integrate import solve_ivp
 from scipy.optimize import fsolve, newton_krylov
 from scipy.interpolate import interp1d
 
+from .. import switching
 
 DEBUG = True
 VERBOSE_DEBUG = False
@@ -15,7 +16,6 @@ NEWTON_KRYLOV_FTOL = 1e-3
 FSOLVE_XTOL = 1e-1
 
 __all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope', 'EnvelopeInterp']
-
 
 
 class EnvelopeInterp (object):
@@ -73,21 +73,31 @@ class EnvelopeSolver (object):
 
         # whether to compute the envelope of the variational system
         self.is_variational = is_variational
+
+        # whether we are dealing with a switching system
+        self.is_switching_system = isinstance(fun, switching.SwitchingSystem)
         
         if not self.is_variational:
             self.original_fun = fun
             self.original_jac = jac
             self.t_span = t_span
         else:
-            if jac is None:
+            if jac is None and not self.is_switching_system:
                 raise Exception('jac cannot be None if is_variational is True')
+
             self.T_large = t_span[1]
             if T is None:
                 T_guess /= t_span[1]
             else:
                 T /= t_span[1]
-            self.original_fun = lambda t,y: self.T_large * fun(t*self.T_large, y)
-            self.original_jac = lambda t,y: jac(t*self.T_large, y)
+
+            if not self.is_switching_system:
+                self.original_fun = lambda t,y: self.T_large * fun(t*self.T_large, y)
+                self.original_jac = lambda t,y: jac(t*self.T_large, y)
+            else:
+                self.original_fun = fun
+                self.original_fun.variational_T = self.T_large
+                self.original_jac = fun.jac
 
         self.original_jac_sparsity = jac_sparsity
         self.original_fun_vectorized = vectorized
@@ -368,6 +378,8 @@ class EnvelopeSolver (object):
     def _envelope_fun(self,t,y,T_guess=None):
         if not self.estimate_T:
             if not type(self.original_fun_method) is str:
+                if self.is_switching_system:
+                    self.original_fun.with_variational = False
                 sol = self.original_fun_method(self.original_fun, [t,t+self.T], y, \
                                                jac=self.original_jac, \
                                                jac_sparsity=self.original_jac_sparsity,
@@ -495,8 +507,16 @@ class EnvelopeSolver (object):
                 M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
             return M, M_var, self.T_var
 
-        sol = solve_ivp(self._variational_system, [t,t+self.T], y_ext,
-                        rtol=self.original_fun_rtol, atol=self.original_fun_atol)
+        if not self.is_switching_system:
+            sol = solve_ivp(self._variational_system, [t,t+self.T], y_ext,
+                            rtol=self.original_fun_rtol, atol=self.original_fun_atol)
+        else:
+            self.original_fun.with_variational = True
+            sol = self.original_fun_method(self.original_fun, [t,t+self.T], y_ext, \
+                                           rtol=self.original_fun_rtol,
+                                           atol=self.original_fun_atol,
+                                           **self.original_fun_kwargs)
+
         M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
         return M, None, -1
 

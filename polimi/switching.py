@@ -8,28 +8,35 @@ __all__ = ['DynamicalSystem', 'SwitchingSystem', 'VanderPol', 'Boost', 'solve_iv
 
 class DynamicalSystem (object):
 
-    def __init__(self, n_dim, with_variational=False, variational_T=None):
+    def __init__(self, n_dim, with_variational=False, variational_T=1):
         self.n_dim = n_dim
         self.with_variational = with_variational
         self.variational_T = variational_T
 
 
     def __call__(self, t, y):
-        if not self.with_variational:
-            return self._fun(t,y)
         T = self.variational_T
+
+        if not self.with_variational:
+            return T * self._fun(t*T,y)
+
         N = self.n_dim
-        J = self.J(t * T, y[:N])
         phi = np.reshape(y[N:N+N**2], (N,N))
+        J = self._J(t * T, y[:N])
         return np.concatenate((T * self._fun(t*T, y[:N]), \
                                T * (J @ phi).flatten()))
+
+
+    def jac(self, t, y):
+        T = self.variational_T
+        return T * self._J(t*T, y)
 
 
     def _fun(self, t, y):
         raise NotImplementedError
 
 
-    def J(self, t, y):
+    def _J(self, t, y):
         raise NotImplementedError
 
 
@@ -59,7 +66,7 @@ class DynamicalSystem (object):
 
 class SwitchingSystem (DynamicalSystem):
 
-    def __init__(self, n_dim, vector_field_index, with_variational=False, variational_T=None):
+    def __init__(self, n_dim, vector_field_index, with_variational=False, variational_T=1):
         super(SwitchingSystem, self).__init__(n_dim, with_variational, variational_T)
         self.n_dim = n_dim
         self.vector_field_index = vector_field_index
@@ -171,7 +178,7 @@ class VanderPol (DynamicalSystem):
         return ydot
 
 
-    def J(self, t, y):
+    def _J(self, t, y):
         return np.array([
             [0, 1],
             [-2 * self.epsilon * y[0] * y[1] - 1, self.epsilon * (1 - y[0] ** 2)]
@@ -222,7 +229,7 @@ class Boost (SwitchingSystem):
         return (self.A[self.vector_field_index] @ y) + self.B
 
 
-    def J(self, t, y):
+    def _J(self, t, y):
         return self.A[self.vector_field_index]
 
 
