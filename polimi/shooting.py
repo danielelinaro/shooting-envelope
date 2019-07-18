@@ -127,14 +127,19 @@ class Shooting (BaseShooting):
 
 class EnvelopeShooting (BaseShooting):
 
-    def __init__(self, fun, N, T, estimate_T, small_T, jac, shooting_tol=1e-3,
-                 env_rtol=1e-1, env_atol=1e-3, fun_rtol=1e-5, fun_atol=1e-7, env_solver=None, ax=None):
+    def __init__(self, fun, N, T, estimate_T, small_T, jac, \
+                 shooting_tol=1e-3, \
+                 env_rtol=1e-1, env_atol=1e-3, \
+                 var_rtol=1e-1, var_atol=1e-2, \
+                 fun_rtol=1e-5, fun_atol=1e-7, \
+                 env_solver=None, env_fun_method='RK45',
+                 ax=None, **kwargs):
         super(EnvelopeShooting, self).__init__(fun, N, T, estimate_T, jac,
                                                shooting_tol, fun_rtol, fun_atol, ax)
         self.T_large = T
         self.T_small = small_T
-        self.env_rtol = env_rtol
-        self.env_atol = env_atol
+        self.env_rtol,self.env_atol = env_rtol,env_atol
+        self.var_rtol,self.var_atol = var_rtol,var_atol
 
         self.env_solver = env_solver
         if self.env_solver is None:
@@ -145,10 +150,17 @@ class EnvelopeShooting (BaseShooting):
         else:
             self.plot_str = 'g.'
 
+        self.env_fun_method = env_fun_method
+        self.env_kwargs = kwargs
+
 
     def _integrate(self, y0):
         solver = self.env_solver(self.fun, [0,self.T_large], y0[:self.N], \
                                  T_guess=None, T=self.T_small, jac=self.jac, \
                                  rtol=self.env_rtol, atol=self.env_atol, \
-                                 is_variational=True)
+                                 fun_method=self.env_fun_method, \
+                                 fun_rtol=self.rtol, fun_atol=self.atol, \
+                                 is_variational=True, T_var_guess=None, T_var=None, \
+                                 var_rtol=self.var_rtol, var_atol=self.var_atol, \
+                                 **self.env_kwargs)
         return solver.solve()

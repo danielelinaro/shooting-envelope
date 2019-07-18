@@ -4,9 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-from polimi.envelope import BEEnvelope, TrapEnvelope
 from polimi.switching import Boost, solve_ivp_switch
-
+from polimi.envelope import BEEnvelope, TrapEnvelope
+from polimi.shooting import EnvelopeShooting
 
 # for saving data
 pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=1)
@@ -285,8 +285,56 @@ def variational_envelope():
     plt.show()
 
 
+def shooting():
+    T = 20e-6
+    ki = 1
+    Vin = 5
+    Vref = 5
+
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
+
+    fun_rtol = 1e-10
+    fun_atol = 1e-12
+
+    y0_guess = np.array([Vin,1])
+    T_large = 100*T
+    T_small = T
+
+    estimate_T = False
+
+    shoot = EnvelopeShooting(boost, boost.n_dim, T_large, \
+                             estimate_T, T_small, boost.jac, \
+                             shooting_tol=1e-3, env_solver=BEEnvelope, \
+                             env_rtol=1e-2, env_atol=1e-3, \
+                             var_rtol=1e-1, var_atol=1e-2, \
+                             fun_rtol=fun_rtol, fun_atol=fun_atol, \
+                             env_fun_method=solve_ivp_switch, \
+                             method='BDF')
+    sol_shoot = shoot.run(y0_guess, do_plot=True)
+    print('Number of iterations: %d.' % sol_shoot['n_iter'])
+
+    print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
+    t_span_var = [0,1]
+    y0_var = np.concatenate((y0_guess,np.eye(len(y0_guess)).flatten()))
+    boost.with_variational = True
+    boost.variational_T = T_large
+    sol = solve_ivp_switch(boost, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+    print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
+
+    #plt.figure()
+    #plt.subplot(1,2,1)
+    #plt.plot(sol['t']/sol['t'][-1],sol['y'][0],'b')
+    #plt.ylabel(r'$V_C$ (V)')
+    #plt.subplot(2,1,2,sharex=ax)
+    #plt.plot(sol['t']*1e6,sol['y'][1],'r')
+    #plt.xlabel(r'Time ($\mu$s)')
+    #plt.ylabel(r'$I_L$ (A)')
+    plt.show()
+
+
 if __name__ == '__main__':
     #system()
     #envelope()
     #variational_integration()
-    variational_envelope()
+    #variational_envelope()
+    shooting()
