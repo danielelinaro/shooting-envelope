@@ -1,5 +1,5 @@
 
-from sys import stdout
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -99,11 +99,11 @@ def envelope():
     sol_trap = trap_solver.solve()
     print('-' * 81)
 
-    stdout.write('Integrating the original system... ')
-    stdout.flush()
+    sys.stdout.write('Integrating the original system... ')
+    sys.stdout.flush()
     sol = solve_ivp_switch(boost, t_span, y0, method='BDF',
                            jac=boost.jac, rtol=fun_rtol, atol=fun_atol)
-    stdout.write('done.\n')
+    sys.stdout.write('done.\n')
 
     labels = [r'$V_C$ (V)', r'$I_L$ (A)']
     axes = []
@@ -120,7 +120,12 @@ def envelope():
     plt.show()
 
 
-def variational_integration():
+def variational_integration(compare=False):
+    if compare:
+        print('Loading PAN data...')
+        data = np.loadtxt('DanieleTest.txt')
+        t = data[:,0] - data[0,0]
+
     T = 20e-6
     ki = 1
     Vin = 5
@@ -131,25 +136,27 @@ def variational_integration():
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    y0 = np.array([Vin,1])
-    t_tran = 100*T
+    t_tran = 0*T
 
-    print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
-    sol = solve_ivp_switch(boost, [0,t_tran], y0, \
+    if t_tran > 0:
+        y0 = np.array([Vin,1])
+        print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
+        sol = solve_ivp_switch(boost, [0,t_tran], y0, \
                            method='BDF', jac=boost.jac, \
                            rtol=fun_rtol, atol=fun_atol)
-    print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
-    plt.figure()
-    ax = plt.subplot(2,1,1)
-    plt.plot(sol['t']*1e6,sol['y'][0],'k')
-    plt.ylabel(r'$V_C$ (V)')
-    plt.subplot(2,1,2,sharex=ax)
-    plt.plot(sol['t']*1e6,sol['y'][1],'r')
-    plt.xlabel(r'Time ($\mu$s)')
-    plt.ylabel(r'$I_L$ (A)')
-    plt.show()
-
-    y0 = sol['y'][:,-1]
+        print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
+        plt.figure()
+        ax = plt.subplot(2,1,1)
+        plt.plot(sol['t']*1e6,sol['y'][0],'k')
+        plt.ylabel(r'$V_C$ (V)')
+        plt.subplot(2,1,2,sharex=ax)
+        plt.plot(sol['t']*1e6,sol['y'][1],'r')
+        plt.xlabel(r'Time ($\mu$s)')
+        plt.ylabel(r'$I_L$ (A)')
+        plt.show()
+        y0 = sol['y'][:,-1]
+    else:
+        y0 = np.array([8.6542,0.82007])
 
     T_large = 100*T
     boost.with_variational = True
@@ -165,26 +172,39 @@ def variational_integration():
     eig,_ = np.linalg.eig(np.reshape(sol['y'][2:,-1],(2,2)))
     print('eigenvalues:', eig)
 
-    plt.figure()
-    ax = plt.subplot(2,2,1)
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.ylabel(r'$V_C$ (V)')
-    plt.subplot(2,2,3,sharex=ax)
-    plt.plot(sol['t'],sol['y'][1],'r')
-    plt.xlabel('Normalized time')
-    plt.ylabel(r'$I_L$ (A)')
+    if not compare:
+        fig,ax = plt.subplots(2,2,sharex=True)
+        ax[0,0].plot(sol['t'],sol['y'][0],'k')
+        ax[0,0].set_ylabel(r'$V_C$ (V)')
+        ax[1,0].plot(sol['t'],sol['y'][1],'k')
+        ax[1,0].set_xlabel('Normalized time')
+        ax[1,0].set_ylabel(r'$I_L$ (A)')
+        colors = ['g','b','m','y']
+        for i in range(2):
+            ax[0,1].plot(sol['t'],sol['y'][i+2],colors[i],label=r'$\Phi_{1,%d}$' % (i+1))
+        ax[0,1].legend(loc='best')
+        for i in range(2):
+            ax[1,1].plot(sol['t'],sol['y'][i+4],colors[i+2],label=r'$\Phi_{2,%d}$' % (i+1))
+        ax[1,1].legend(loc='best')
+        ax[1,1].set_xlabel('Normalized time')
 
-    colors = ['g','b','m','y']
-    plt.subplot(2,2,2,sharex=ax)
-    for i in range(2):
-        plt.plot(sol['t'],sol['y'][i+2],colors[i],label=r'$y_{}$'.format(i+1))
-    plt.legend(loc='best')
-    
-    plt.subplot(2,2,4,sharex=ax)
-    for i in range(2):
-        plt.plot(sol['t'],sol['y'][i+4],colors[i+2],label=r'$y_{}$'.format(i+3))
-    plt.legend(loc='best')
-    plt.xlabel('Normalized time')
+    else:
+        labels = [r'$V_C$ (V)', r'$I_L$ (A)']
+        idx, = np.where(t < T_large)
+        fig,ax = plt.subplots(3,2,sharex=True)
+        for i in range(2):
+            ax[0,i].plot(sol['t'],sol['y'][i],'k')
+            ax[0,i].set_ylabel(labels[i])
+            ax[0,i].set_xlim([0,1])
+            for j in range(2):
+                k = i*2 + j
+                ax[i+1,j].plot(t[idx]/T_large,data[idx,(k+1)*2],'r',label='PAN')
+                ax[i+1,j].plot(sol['t'],sol['y'][k+2],'k',label='Python')
+                ax[i+1,j].set_ylabel(r'$\Phi_{%d,%d}$' % (i+1,j+1))
+                ax[i+1,j].set_xlim([0,1])
+            ax[2,i].set_xlabel('Normalized time')
+        ax[1,0].legend(loc='best')
+
     plt.show()
 
 
@@ -369,6 +389,9 @@ def shooting():
 if __name__ == '__main__':
     #system()
     #envelope()
-    #variational_integration()
+    if len(sys.argv) > 1 and sys.argv[1] == 'compare':
+        variational_integration(True)
+    else:
+        variational_integration(False)
     #variational_envelope()
-    shooting()
+    #shooting()
