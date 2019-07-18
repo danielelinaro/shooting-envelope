@@ -12,7 +12,7 @@ from . import envelope
 
 class BaseShooting (object):
 
-    def __init__(self, fun, N, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7, ax=None):
+    def __init__(self, fun, N, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7):
         # original number of dimensions of the system
         self.N = N
         self.fun = fun
@@ -32,8 +32,8 @@ class BaseShooting (object):
         self.rtol = rtol
         self.atol = atol
 
-        self.ax = ax
-        self.plot_str = 'k-'
+        self.integrations = []
+
 
     def _extended_system(self, t, y):
         N = self.N
@@ -51,9 +51,7 @@ class BaseShooting (object):
         raise NotImplementedError
 
 
-    def run(self, y0, max_iter=100, do_plot=False):
-        if do_plot:
-            import matplotlib.pyplot as plt
+    def run(self, y0, max_iter=100):
         N = self.N
         if len(y0) != N:
             raise Exception('y0 has wrong dimensions')
@@ -66,10 +64,7 @@ class BaseShooting (object):
                 self.T = y0[-1]
                 y0_ext = np.concatenate((y0_ext,np.zeros(N)))
             sol = self._integrate(y0_ext)
-
-            if self.ax is not None:
-                self.ax[i*2].plot(sol['t'], sol['y'][0], self.plot_str, lw=1)
-                self.ax[i*2+1].plot(sol['t'], sol['y'][2], self.plot_str, lw=1)
+            self.integrations.append(sol)
 
             r = np.array([x[-1]-x[0] for x in sol['y'][:N]])
             phi = np.reshape(sol['y'][N:N**2+N,-1],(N,N))
@@ -84,29 +79,14 @@ class BaseShooting (object):
                 M = phi - np.eye(N)
             y0_new = y0 - solve(M,r)
             print('BaseShooting.run({})> y0_new = {}.'.format(i+1,y0_new[:N]))
-            if do_plot:
-                if i == 0:
-                    fig,(ax1,ax2) = plt.subplots(1,2)
-                    ax1.plot(sol['t'],sol['y'][0,:],'r')
-                    ax2.plot(sol['y'][1,:],sol['y'][0,:],'r')
-                else:
-                    if np.all(np.abs(y0_new - y0) < self.tol):
-                        ax1.plot(sol['t'],sol['y'][0,:],'k')
-                    else:
-                        ax1.plot(sol['t'],sol['y'][0,:])
             print('BaseShooting.run({})> error = {}.'.format(i+1,np.abs(y0_new - y0)))
             if np.all(np.abs(y0_new-y0) < self.tol):
                 break
             y0 = y0_new
 
-        if do_plot:
-            ax1.set_xlabel('Time')
-            ax1.set_ylabel('x')
-            ax2.plot(sol['y'][1,:],sol['y'][0,:],'k')
-            ax2.set_xlabel('y')
-
         sol = {'y0': y0_new[:N], 'phi': phi, 'n_iter': i+1,
-               't': sol['t'], 'y': sol['y']}
+               'integrations': self.integrations}
+
         if self.estimate_T:
             sol['T'] = y0_new[-1]
         else:
@@ -117,8 +97,8 @@ class BaseShooting (object):
 
 class Shooting (BaseShooting):
 
-    def __init__(self, fun, N, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7, ax=None):
-        super(Shooting, self).__init__(fun, N, T, estimate_T, jac, tol, rtol, atol, ax)
+    def __init__(self, fun, N, T, estimate_T, jac=None, tol=1e-3, rtol=1e-5, atol=1e-7):
+        super(Shooting, self).__init__(fun, N, T, estimate_T, jac, tol, rtol, atol)
 
 
     def _integrate(self, y0):
@@ -128,14 +108,11 @@ class Shooting (BaseShooting):
 class EnvelopeShooting (BaseShooting):
 
     def __init__(self, fun, N, T, estimate_T, small_T, jac, \
-                 shooting_tol=1e-3, \
-                 env_rtol=1e-1, env_atol=1e-3, \
-                 var_rtol=1e-1, var_atol=1e-2, \
-                 fun_rtol=1e-5, fun_atol=1e-7, \
-                 env_solver=None, env_fun_method='RK45',
-                 ax=None, **kwargs):
+                 shooting_tol=1e-3, env_rtol=1e-1, env_atol=1e-3, \
+                 var_rtol=1e-1, var_atol=1e-2, fun_rtol=1e-5, fun_atol=1e-7, \
+                 env_solver=None, env_fun_method='RK45', **kwargs):
         super(EnvelopeShooting, self).__init__(fun, N, T, estimate_T, jac,
-                                               shooting_tol, fun_rtol, fun_atol, ax)
+                                               shooting_tol, fun_rtol, fun_atol)
         self.T_large = T
         self.T_small = small_T
         self.env_rtol,self.env_atol = env_rtol,env_atol
@@ -144,11 +121,6 @@ class EnvelopeShooting (BaseShooting):
         self.env_solver = env_solver
         if self.env_solver is None:
             self.env_solver = envelope.TrapEnvelope
-
-        if self.env_solver == envelope.BEEnvelope:
-            self.plot_str = 'r.'
-        else:
-            self.plot_str = 'g.'
 
         self.env_fun_method = env_fun_method
         self.env_kwargs = kwargs

@@ -286,6 +286,7 @@ def variational_envelope():
 
 
 def shooting():
+
     T = 20e-6
     ki = 1
     Vin = 5
@@ -296,8 +297,23 @@ def shooting():
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    y0_guess = np.array([Vin,1])
-    T_large = 100*T
+    y0_guess = np.array([Vin,0])
+
+    with_tran = False
+
+    if with_tran:
+        tran = solve_ivp_switch(boost, [0,50*T], y0_guess, method='BDF', \
+                                jac=boost.jac, rtol=fun_rtol, atol=fun_atol)
+        fig = plt.figure()
+        ax1 = fig.add_subplot(2,1,1)
+        ax2 = fig.add_subplot(2,1,2,sharex=ax1)
+        ax1.plot(tran['t']/T,tran['y'][0],'k')
+        ax1.set_ylabel(r'$V_C$ (V)')
+        ax2.plot(tran['t']/T,tran['y'][1],'k')
+        ax2.set_xlabel('No. of periods')
+        ax2.set_ylabel(r'$I_L$ (A)')
+
+    T_large = 10*T
     T_small = T
 
     estimate_T = False
@@ -310,25 +326,43 @@ def shooting():
                              fun_rtol=fun_rtol, fun_atol=fun_atol, \
                              env_fun_method=solve_ivp_switch, \
                              method='BDF')
-    sol_shoot = shoot.run(y0_guess, do_plot=True)
+    sol_shoot = shoot.run(y0_guess)
     print('Number of iterations: %d.' % sol_shoot['n_iter'])
 
-    print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
     t_span_var = [0,1]
-    y0_var = np.concatenate((y0_guess,np.eye(len(y0_guess)).flatten()))
     boost.with_variational = True
     boost.variational_T = T_large
-    sol = solve_ivp_switch(boost, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
-    print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
 
-    #plt.figure()
-    #plt.subplot(1,2,1)
-    #plt.plot(sol['t']/sol['t'][-1],sol['y'][0],'b')
-    #plt.ylabel(r'$V_C$ (V)')
-    #plt.subplot(2,1,2,sharex=ax)
-    #plt.plot(sol['t']*1e6,sol['y'][1],'r')
-    #plt.xlabel(r'Time ($\mu$s)')
-    #plt.ylabel(r'$I_L$ (A)')
+    col = 'krgbcmy'
+    lw = 0.7
+    fig = plt.figure(figsize=(12,7))
+
+    for i,integr in enumerate(sol_shoot['integrations']):
+
+        y0 = integr['y'][:2,0]
+        y0_var = np.concatenate((y0,np.eye(2).flatten()))
+        sol = solve_ivp_switch(boost, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+
+        ax1 = fig.add_subplot(3,2,1)
+        ax1.plot(sol['t'],sol['y'][0],col[i],lw=lw,label='Iter #%d' % (i+1))
+        ax1.plot(integr['t'],integr['y'][0],col[i]+'o-',lw=1,ms=3)
+
+        ax2 = fig.add_subplot(3,2,2,sharex=ax1)
+        ax2.plot(sol['t'],sol['y'][1],col[i],lw=lw)
+        ax2.plot(integr['t'],integr['y'][1],col[i]+'o-',lw=1,ms=3)
+
+        for j in range(3,7):
+            ax = fig.add_subplot(3,2,j,sharex=ax1)
+            ax.plot(sol['t'],sol['y'][j-1],col[i],lw=lw)
+            ax.plot(integr['t'],integr['y'][j-1],col[i]+'o',lw=1,ms=3)
+            ax.set_ylabel(r'$J_{%d,%d}$' % (int((j-1)/2),(j-1)%2+1))
+            if j > 4:
+                ax.set_xlabel('Normalized time')
+
+    ax1.legend(loc='best')
+    ax1.set_ylabel(r'$V_C$ (V)')
+    ax2.set_ylabel(r'$I_L$ (A)')
+    plt.savefig('boost_shooting.pdf')
     plt.show()
 
 
