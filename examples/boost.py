@@ -269,14 +269,14 @@ def variational_envelope():
     colors = ['c','b','m','y']
     plt.subplot(2,2,2,sharex=ax)
     for i in range(2):
-        plt.plot(sol['t'],sol['y'][i+2],colors[i],label=r'$J_{1,%d}$' % (i+1))
+        plt.plot(sol['t'],sol['y'][i+2],colors[i],label=r'$\Phi_{1,%d}$' % (i+1))
         plt.plot(var_sol_be['t'],var_sol_be['y'][i+2],'rs')
         plt.plot(var_sol_trap['t'],var_sol_trap['y'][i+2],'go')
     plt.legend(loc='best')
 
     plt.subplot(2,2,4,sharex=ax)
     for i in range(2):
-        plt.plot(sol['t'],sol['y'][i+4],colors[i+2],label=r'$J_{2,%d}$' % (i+1))
+        plt.plot(sol['t'],sol['y'][i+4],colors[i+2],label=r'$\Phi_{2,%d}$' % (i+1))
         plt.plot(var_sol_be['t'],var_sol_be['y'][i+4],'rs')
         plt.plot(var_sol_trap['t'],var_sol_trap['y'][i+4],'go')
     plt.legend(loc='best')
@@ -355,7 +355,7 @@ def shooting():
             ax = fig.add_subplot(3,2,j,sharex=ax1)
             ax.plot(sol['t'],sol['y'][j-1],col[i],lw=lw)
             ax.plot(integr['t'],integr['y'][j-1],col[i]+'o',lw=1,ms=3)
-            ax.set_ylabel(r'$J_{%d,%d}$' % (int((j-1)/2),(j-1)%2+1))
+            ax.set_ylabel(r'$\Phi_{%d,%d}$' % (int((j-1)/2),(j-1)%2+1))
             if j > 4:
                 ax.set_xlabel('Normalized time')
 
