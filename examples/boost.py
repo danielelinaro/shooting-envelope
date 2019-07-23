@@ -211,11 +211,11 @@ def variational_envelope(N_periods=100, eig_vect=None, compare=False):
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    t_tran = 0*T
+    t_tran = 50*T
 
     if t_tran > 0:
         print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
-        sol = solve_ivp_switch(boost, [0,t_tran], y0, \
+        sol = solve_ivp_switch(boost, [0,t_tran], np.array([Vin,1]), \
                                method='BDF', jac=boost.jac, \
                                rtol=fun_rtol, atol=fun_atol)
         y0 = sol['y'][:,-1]
@@ -392,7 +392,7 @@ if __name__ == '__main__':
     #envelope()
 
     ## Example 3
-    #variational_envelope()
+    variational_envelope()
 
     ## Example 4
     #variational_integration(N_periods=100, compare=True)
@@ -402,4 +402,4 @@ if __name__ == '__main__':
     #variational_envelope(N_periods=100, eig_vect=eig, compare=True)
 
     ## Example 6
-    shooting()
+    #shooting()

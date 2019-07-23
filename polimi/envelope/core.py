@@ -469,7 +469,12 @@ class EnvelopeSolver (object):
             # find the equation of the plane containing y and
             # orthogonal to _variational_system(t,y)
             vars_to_use = np.arange(self.n_dim, self.n_dim + self.n_dim**2)
-            f = self._variational_system(t,y_ext)
+            if not self.is_switching_system:
+                f = self._variational_system(t,y_ext)
+            else:
+                self.original_fun.with_variational = True
+                f = self.original_fun(t,y_ext)
+
             w = f[vars_to_use] / np.linalg.norm(f[vars_to_use])
             b = -np.dot(w, y_ext[vars_to_use])
 
@@ -479,9 +484,20 @@ class EnvelopeSolver (object):
             events_fun[1].direction = 0
 
             t_stop = t + max([self.T, 1.5*T_var_guess])
-            sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
-                            rtol=self.original_fun_rtol, atol=self.original_fun_atol,
-                            events=events_fun, dense_output=True)
+
+            if not self.is_switching_system:
+                sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
+                                rtol=self.original_fun_rtol, atol=self.original_fun_atol,
+                                events=events_fun, dense_output=True)
+            else:
+                self.original_fun.with_variational = True
+                sol = self.original_fun_method(self.original_fun, [t,t_stop], y_ext, \
+                                               rtol=self.original_fun_rtol,
+                                               atol=self.original_fun_atol,
+                                               **self.original_fun_kwargs)
+                import ipdb
+                ipdb.set_trace()
+
             T_var = sol['t_events'][0][1] - t
             y_ev = sol['sol'](sol['t_events'][1])
             M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy(),
