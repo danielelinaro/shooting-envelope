@@ -10,19 +10,37 @@ pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=
 
 
 def autonomous():
-    from polimi import vdp
+    from polimi import VanderPol
+
     epsilon = 1e-3
     A = [0]
     T = [1]
-    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    vdp = VanderPol(epsilon, A, T)
+
     t_span = [0,1000*2*np.pi]
-    y0 = [2e-3,0]
+    y0 = np.array([2e-3, 1e-3])
+
+    fun_rtol = 1e-8
+    fun_atol = 1e-10
+    env_rtol = 1e-3
+    env_atol = 1e-6
+
     T_guess = 2*np.pi*0.9
-    be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6)
-    trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6)
+
+    be_solver = BEEnvelope(vdp, t_span, y0, T_guess=T_guess, \
+                           env_rtol=env_rtol, env_atol=env_atol, \
+                           solver=solve_ivp, rtol=fun_rtol, \
+                           atol=fun_atol, method='BDF', jac=vdp.jac)
+    trap_solver = TrapEnvelope(vdp, t_span, y0, T=2*np.pi, \
+                               env_rtol=env_rtol, env_atol=env_atol, \
+                               solver=solve_ivp, rtol=fun_rtol, \
+                               atol=fun_atol, method='BDF', jac=vdp.jac)
+    print('-' * 81)
     sol_be = be_solver.solve()
+    print('-' * 81)
     sol_trap = trap_solver.solve()
-    sol = solve_ivp(fun, [t_span[0],t_span[-1]], y0, method='BDF', rtol=1e-8, atol=1e-10)
+    print('-' * 81)
+    sol = solve_ivp(vdp, t_span, y0, method='BDF', rtol=1e-8, atol=1e-10)
 
     #np.savetxt('vdp_autonomous.txt', pack(sol['t'],sol['y']), fmt='%.3e')
     #np.savetxt('vdp_autonomous_envelope_BE.txt', pack(sol_be['t'],sol_be['y']), fmt='%.3e')
@@ -78,7 +96,8 @@ def forced_polar():
 
 
 def forced():
-    from polimi import vdp
+    from polimi import VanderPol
+
     epsilon = 1e-3
     T_exact = 10
     T_guess = 0.9 * T_exact
@@ -89,14 +108,14 @@ def forced():
     atol = {'fun': 1e-10, 'env': 1e-3}
 
     y0 = [2e-3,0]
-    fun = lambda t,y: vdp(t,y,epsilon,A,T)
+    vdp = VanderPol(epsilon, A, T)
     method = 'RK45'
 
     t0 = 0
     ttran = 1000
     if ttran > 0:
         print('Integrating the full system (transient)...')
-        tran = solve_ivp(fun, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
+        tran = solve_ivp(vdp, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
         t0 = tran['t'][-1]
         y0 = tran['y'][:,-1]
         plt.plot(tran['t'],tran['y'][0],'k')
@@ -107,13 +126,17 @@ def forced():
     print('y0 =',y0)
 
     t_span = [t0,t0+T[1]]
-    be_solver = BEEnvelope(fun, t_span, y0, T_guess, T=T_exact, rtol=rtol['env'], atol=atol['env'])
-    trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, T=T_exact, rtol=rtol['env'], atol=atol['env'])
+    be_solver = BEEnvelope(vdp, t_span, y0, T=T_exact, \
+                           env_rtol=rtol['env'], env_atol=atol['env'], \
+                           rtol=rtol['fun'], atol=atol['fun'])
+    trap_solver = TrapEnvelope(vdp, t_span, y0, T=T_exact, \
+                               env_rtol=rtol['env'], env_atol=atol['env'], \
+                               rtol=rtol['fun'], atol=atol['fun'])
     sol_be = be_solver.solve()
     print('The number of integrated periods of the original system with BE is %d.' % be_solver.original_fun_period_eval)
     sol_trap = trap_solver.solve()
     print('The number of integrated periods of the original system with TRAP is %d.' % trap_solver.original_fun_period_eval)
-    sol = solve_ivp(fun, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
+    sol = solve_ivp(vdp, t_span, y0, method='RK45', rtol=rtol['fun'], atol=atol['fun'])
 
     #np.savetxt('vdp_forced_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
     #           pack(sol['t'],sol['y']), fmt='%.3e')
@@ -128,27 +151,33 @@ def forced():
     plt.show()
 
 
-def hr():
-    from polimi import hr
+def HR():
+    from polimi import HindmarshRose
     b = 3
     I = 5
-    fun = lambda t,y: hr(t,y,I,b)
+    hr = HindmarshRose(I,b)
 
     y0 = [0,1,0.1]
     t_tran = 100
-    sol = solve_ivp(fun, [0,t_tran], y0, method='RK45', rtol=1e-8, atol=1e-10)
+    sol = solve_ivp(hr, [0,t_tran], y0, method='RK45', rtol=1e-8, atol=1e-10)
     y0 = sol['y'][:,-1]
 
     t_span = [0,5000]
     T_guess = 11
 
-    be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6,
-                           fun_rtol=1e-8, fun_atol=1e-10)
-    trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=1e-3, atol=1e-6,
-                               fun_rtol=1e-8, fun_atol=1e-10, vars_to_use=[0,1])
+    be_solver = BEEnvelope(hr, t_span, y0, T_guess=T_guess, \
+                           env_rtol=1e-3, env_atol=1e-6, \
+                           rtol=1e-8, atol=1e-10)
+    trap_solver = TrapEnvelope(hr, t_span, y0, T_guess=T_guess, \
+                               env_rtol=1e-3, env_atol=1e-6, \
+                               rtol=1e-8, atol=1e-10)
+
+    print('-' * 81)
     sol_be = be_solver.solve()
+    print('-' * 81)
     sol_trap = trap_solver.solve()
-    sol = solve_ivp(fun, [t_span[0],t_span[-1]], y0, method='RK45', rtol=1e-8, atol=1e-10)
+    print('-' * 81)
+    sol = solve_ivp(hr, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
 
     plt.plot(sol['t'],sol['y'][0],'k')
     plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
@@ -324,7 +353,7 @@ def main():
     autonomous()
     #forced_polar()
     #forced()
-    #hr()
+    #HR()
 
 
 if __name__ == '__main__':

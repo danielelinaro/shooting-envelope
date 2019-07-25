@@ -1,7 +1,8 @@
 
-__all__ = ['boost', 'boost_jac', 'vdp', 'vdp_jac', 'vdp_extrema', 'vdp_auto', 'hr']
+__all__ = ['DynamicalSystem', 'VanderPol', 'HindmarshRose']
 
 import numpy as np
+
 
 def jacobian_finite_differences(fun,t,y):
     n = len(y)
@@ -16,53 +17,136 @@ def jacobian_finite_differences(fun,t,y):
     return J
 
 
-def boost_matrixes(R, L, C, Rs, Vin):
-    A1 = np.array([ [-1/(R*C), 0],   [0, -Rs/L]    ])
-    A2 = np.array([ [-1/(R*C), 1/C], [-1/L, -Rs/L] ])
-    B  = np.array([0, Vin/L])
-    return A1, A2, B
+class DynamicalSystem (object):
 
-def boost(t, y, T=20e-6, DC=0.5, R=5, L=10e-6, C=47e-6, Rs=0, Vin=5):
-    A1, A2, B = boost_matrixes(R, L, C, Rs, Vin)
-    if (t % T) < (DC * T):
-        A = A1
-    else:
-        A = A2
-    return (A @ y) + B
+    def __init__(self, n_dim, with_variational=False, variational_T=1):
+        self.n_dim = n_dim
+        self.with_variational = with_variational
+        self.variational_T = variational_T
 
-def boost_jac(t, y, T=20e-6, DC=0.5, R=5, L=10e-6, C=47e-6, Rs=0, Vin=5):
-    A1, A2, _ = boost_matrixes(R, L, C, Rs, Vin)
-    if (t % T) < (DC * T):
-        return A1
-    return A2
 
-def vdp(t,y,epsilon,A,T):
-    F = [1./tt for tt in T]
-    ydot = np.array([
-        y[1],
-        epsilon*(1-y[0]**2)*y[1] - y[0]
-    ])
-    n = len(A)
-    for i in range(n):
-        ydot[1] += A[i]*np.cos(2*np.pi*F[i]*t)
-    return ydot
+    def __call__(self, t, y):
+        T = self.variational_T
 
-def vdp_jac(t,y,epsilon):
-    return np.array([
-        [0,1],
-        [-2*epsilon*y[0]*y[1]-1,epsilon*(1-y[0]**2)]
-    ])
+        if not self.with_variational:
+            return T * self._fun(t*T,y)
 
-def vdp_extrema(t,y,epsilon,A,T,coord):
-    ydot = vdp(t,y,epsilon,A,T)
-    return ydot[coord]
+        N = self.n_dim
+        phi = np.reshape(y[N:N+N**2], (N,N))
+        J = self._J(t * T, y[:N])
+        return np.concatenate((T * self._fun(t*T, y[:N]), \
+                               T * (J @ phi).flatten()))
 
-#def polar(t,y,k,rho,L,T):
-#    root = np.square(y[0]**2 + y[1]**2)
-#    return np.array([
-#        k * (rho*L*y[0]/root - L*y[0]) - 2*np.pi*y[1]/T,
-#        k * (rho*L*y[1]/root - L*y[1]) - 2*np.pi*y[0]/T
-#        ])
+
+    def jac(self, t, y):
+        T = self.variational_T
+        return T * self._J(t*T, y)
+
+
+    def _fun(self, t, y):
+        raise NotImplementedError
+
+
+    def _J(self, t, y):
+        raise NotImplementedError
+
+
+    @property
+    def with_variational(self):
+        return self._with_variational
+
+
+    @with_variational.setter
+    def with_variational(self, value):
+        if not isinstance(value, bool):
+            raise ValueError('value must be of boolean type')
+        self._with_variational = value
+
+
+    @property
+    def variational_T(self):
+        return self._variational_T
+
+
+    @variational_T.setter
+    def variational_T(self, T):
+        if T <= 0:
+            raise ValueError('T must be greater than 0')
+        self._variational_T = T
+
+
+class VanderPol (DynamicalSystem):
+
+    def __init__(self, epsilon, A, T, with_variational=False, variational_T=1):
+        super(VanderPol, self).__init__(2, with_variational, variational_T)
+
+        self.epsilon = epsilon
+
+        if np.isscalar(A):
+            self.A = np.array([A])
+        elif isinstance(A, list) or isinstance(A, tuple):
+            self.A = np.array(A)
+        else:
+            self.A = A
+
+        if np.isscalar(T):
+            self.T = np.array([T])
+        elif isinstance(T, list) or isinstance(T, tuple):
+            self.T = np.array(T)
+        else:
+            self.T = T
+
+        self.F = np.array([1./t for t in T])
+        self.n_forcing = len(self.F)
+
+
+    def _fun(self, t, y):
+        ydot = np.array([
+            y[1],
+            self.epsilon*(1-y[0]**2)*y[1] - y[0]
+        ])
+        for i in range(self.n_forcing):
+            ydot[1] += self.A[i] * np.cos(2 * np.pi * self.F[i] * t)
+        return ydot
+
+
+    def _J(self, t, y):
+        return np.array([
+            [0, 1],
+            [-2 * self.epsilon * y[0] * y[1] - 1, self.epsilon * (1 - y[0] ** 2)]
+        ])
+
+
+
+class HindmarshRose (DynamicalSystem):
+
+    def __init__(self, I, b, mu=0.01, s=4, x_rest=-1.6, with_variational=False, variational_T=1):
+        super(HindmarshRose, self).__init__(3, with_variational, variational_T)
+        self.I = I
+        self.b = b
+        self.mu = mu
+        self.s = s
+        self.x_rest = x_rest
+
+
+    def _fun(self, t, y):
+        return np.array([
+            y[1] - y[0]**3 + self.b*y[0]**2 + self.I - y[2],
+            1 - 5*y[0]**2 - y[1],
+            self.mu * (self.s * (y[0] - self.x_rest) - y[2])
+        ])
+
+
+    def _J(self, t, y):
+        return np.array([
+            [-3*y[0]**2 + 2*self.b*y[0], 1, -1],
+            [-10*y[0], -1, 0],
+            [self.mu*self.s, 0, -self.mu]
+        ])
+
+
+#################################################################
+# Unused stuff - START
 
 def vdp_auto(t,y,epsilon,A,T):
     rho = 1
@@ -86,73 +170,9 @@ def polar(t,y,rho,T):
     ydot[0] = (rho - sum_of_squares - 2*y[1]*ydot[1]) / (2*y[0])
     return ydot
 
-def burster(t,y,alpha,R,TF,I0,T,A,F,frac):
-    square = lambda t,T,frac: 1 if t%T < frac*T else 0
-    V1 = A*np.sin(2*np.pi*F*t)
-    V2 = square(t,T,frac)
-    A = I0 * np.arctanh(alpha*y[0])
-    return np.array([-(y[0]/R + A + V1*V2) / (alpha * TF * I0 * (1-A*A))])
+# Unused stuff - END
+#################################################################
 
-def colpitts(t,y,Q,g,k,Q0,alpha):
-    n = lambda x: np.exp(-x)-1.
-    #return np.array([
-    #    g/(Q*(1-k)) * (-np.exp(-y[1]) + 1 + y[2]),
-    #    g/(Q*k) * y[2],
-    #    -Q*k*(1-k)/g*(y[0]+y[1]) - y[2]/Q
-    #    ])
-    x1,x2,x3 = y[0],y[1],y[2]
-    return np.array([
-        g/(Q*(1-k)) * (-alpha*n(x2) + x3),
-        g/(Q*k) * ((1-alpha)*n(x2) + x3) - Q0*(1-k)*x2,
-        -Q*k*(1-k)/g * (x1+x2) - x3/Q
-        ])
-
-def colpitts_jac(t,y,Q,g,k):
-    return np.array([
-        [0,g*np.exp(y[1])/(Q*(k-1)),g/(Q*(1-k))],
-        [0,0,g/(k*Q)],
-        [-Q*k*(1-k)/g,-Q*k*(1-k)/g,-1./Q]
-        ])
-
-def hr(t,y,I,b,mu=0.01,s=4,x_rest=-1.6):
-    return np.array([
-        y[1] - y[0]**3 + b*y[0]**2 + I - y[2],
-        1 - 5*y[0]**2 - y[1],
-        mu * (s * (y[0] - x_rest) - y[2])
-        ])
-
-def vanderpol_test():
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from scipy.integrate import solve_ivp
-    epsilon = 1e-3
-    A = [10,0.1]
-    T = [10,1000]
-    y0 = [2e-3,0,1,0,1,0]
-    tend = 3000
-    fun = lambda t,y: vdp_auto(t,y,epsilon,A,T)
-    sol = solve_ivp(fun, [0,tend], y0, method='RK45', atol=1e-6, rtol=1e-8)
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.show()
-
-def burster_test():
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from scipy.integrate import solve_ivp
-    I0 = 0.4e-3
-    alpha = 1
-    TF = 2e-9
-    R = 1e3
-    amp = 4.5e-3
-    T = 100e-9
-    F = 1e9
-    tend = 200e-9
-    frac = 0.5
-    fun = lambda t,y: burster(t,y,alpha,R,TF,I0,T,amp,F,frac)
-    y0 = [1e-3]
-    sol = solve_ivp(fun, [0,tend], y0, method='RK45', atol=1e-8, rtol=1e-10)
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.show()
 
 def hr_test():
     import numpy as np
@@ -161,11 +181,19 @@ def hr_test():
     b = 3
     I = 5
     tend = 500
-    fun = lambda t,y: hr(t,y,I,b)
+    hr = HindmarshRose(I, b)
     y0 = [0,1,0.1]
-    sol = solve_ivp(fun, [0,tend], y0, method='RK45', atol=1e-8, rtol=1e-10)
-    plt.plot(sol['t'],sol['y'][0],'k')
+    atol = 1e-8
+    rtol = 1e-10
+    sol = solve_ivp(hr, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
+    plt.plot(sol['t'],sol['y'][0],'r',label='RK45',)
+    sol = solve_ivp(hr, [0,tend], y0, method='BDF', jac=hr.jac, atol=atol, rtol=rtol)
+    plt.plot(sol['t'],sol['y'][0],'k',label='BDF')
+    plt.legend(loc='best')
+    plt.xlabel('Time')
+    plt.ylabel('x')
     plt.show()
+
 
 if __name__ == '__main__':
     hr_test()
