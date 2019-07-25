@@ -35,6 +35,60 @@ def system():
     plt.show()
 
 
+def envelope():
+    epsilon = 1e-3
+    A = [10,1]
+    T = [4,400]
+
+    vdp = VanderPol(epsilon, A, T)
+    fun_rtol = 1e-10
+    fun_atol = 1e-12
+
+    t_tran = 0
+
+    if t_tran > 0:
+        sol = solve_ivp(vdp, [0, t_tran], [-2,1], method='BDF', \
+                        jac=vdp.jac, rtol=fun_rtol, atol=fun_atol)
+        y0 = sol['y'][:,-1]
+    else:
+        y0 = np.array([-5.84170838, 0.1623759])
+
+    print('y0 =', y0)
+
+    t0 = 0
+    t_end = np.max(T)
+    t_span = np.array([t0, t_end])
+
+    env_rtol = 1e-1
+    env_atol = 1e-2
+    be_env_solver = BEEnvelope(vdp, t_span, y0, T=np.min(T), \
+                               env_rtol=env_rtol, env_atol=env_atol, \
+                               rtol=fun_rtol, atol=fun_atol, \
+                               method='BDF', jac=vdp.jac)
+    be_env_sol = be_env_solver.solve()
+
+    trap_env_solver = TrapEnvelope(vdp, t_span, y0, T=np.min(T), \
+                                   env_rtol=env_rtol, env_atol=env_atol, \
+                                   rtol=fun_rtol, atol=fun_atol, \
+                                   method='BDF', jac=vdp.jac)
+    trap_env_sol = trap_env_solver.solve()
+
+    sol = solve_ivp(vdp, t_span, y0, method='BDF', \
+                    jac=vdp.jac, rtol=fun_rtol, atol=fun_atol)
+
+    fig,(ax1,ax2) = plt.subplots(2, 1, sharex=True)
+    ax1.plot(sol['t'], sol['y'][0], 'k')
+    ax1.plot(be_env_sol['t'], be_env_sol['y'][0], 'ro-')
+    ax1.plot(trap_env_sol['t'], trap_env_sol['y'][0], 'gs-')
+    ax1.set_ylabel(r'$V_C$ (V)')
+    ax2.plot(sol['t'], sol['y'][1], 'k')
+    ax2.plot(be_env_sol['t'], be_env_sol['y'][1], 'ro-')
+    ax2.plot(trap_env_sol['t'], trap_env_sol['y'][1], 'gs-')
+    ax2.set_xlabel('Time (s)')
+    ax2.set_ylabel(r'$I_L$ (A)')
+    plt.show()
+
+
 def variational_envelope():
     from polimi import vdp, vdp_jac
 
@@ -103,4 +157,5 @@ def variational_envelope():
 
 if __name__ == '__main__':
     #system()
-    variational_envelope()
+    envelope()
+    #variational_envelope()

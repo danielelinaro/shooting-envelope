@@ -1,7 +1,7 @@
 
 import numpy as np
-from scipy.integrate import solve_ivp
-
+from scipy.integrate import solve_ivp, OdeSolution
+from scipy.integrate._ivp.ivp import OdeResult
 
 __all__ = ['DynamicalSystem', 'SwitchingSystem', 'VanderPol', 'Boost', 'solve_ivp_switch']
 
@@ -276,9 +276,7 @@ class Boost (SwitchingSystem):
 
 def solve_ivp_switch(sys, t_span, y0, **kwargs):
 
-    for k in ('dense_output', 'events'):
-        if k in kwargs:
-            kwargs.pop(k)
+    kwargs_copy = kwargs.copy()
 
     t_cur = t_span[0]
     t_end = t_span[1]
@@ -287,16 +285,61 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
     t = np.array([])
     y = np.array([[] for _ in range(y0.shape[0])])
 
+    n_system_events = len(sys.event_functions)
+
+    # the event functions of the original system
     event_functions = sys.event_functions.copy()
+
+    # user event function passed as arguments
+    user_event_idx = []
+    try:
+        user_events = kwargs_copy.pop('events')
+        if not isinstance(user_events, list):
+            n_user_events = 1
+            user_event_idx.append(len(event_functions))
+            event_functions.append(user_events)
+        else:
+            n_user_events = len(user_events)
+            user_event_idx = []
+            for event in user_events:
+                user_event_idx.append(len(event_functions))
+                event_functions.append(event)
+        t_events = [[] for _ in range(n_user_events)]
+        y_events = [[] for _ in range(n_user_events)]
+    except:
+        n_user_events = 0
+        t_events = None
+        y_events = None
+
+    # one last event to stop at the exact time instant
     event_functions.append(lambda t,y: t - t_end)
     event_functions[-1].terminal = 0
     event_functions[-1].direction = 1
-    n_events = len(event_functions)
 
-    while np.abs(t_cur - t_end) > 1e-10:
+    n_events = n_system_events + n_user_events + 1
+
+    try:
+        dense_output = kwargs_copy.pop('dense_output')
+    except:
+        dense_output = False
+
+    if dense_output:
+        ts = np.array([])
+        interpolants = []
+
+    terminate = False
+    nfev = 0
+    njev = 0
+    nlu = 0
+    while np.abs(t_cur - t_end) > 1e-10 and not terminate:
         sol = solve_ivp(sys, [t_cur,t_end*1.001], y_cur,
                         events=event_functions,
-                        dense_output=True, **kwargs)
+                        dense_output=True, **kwargs_copy)
+        nfev += sol['nfev']
+        njev += sol['njev']
+        nlu += sol['nlu']
+        if not sol['success']:
+            break
         t_next = np.inf
         ev_idx = None
         for i,t_ev in enumerate(sol['t_events']):
@@ -306,6 +349,12 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
         if ev_idx is None:
             t_next = sol['t'][-1]
             y_next = sol['y'][:,-1]
+        elif ev_idx in user_event_idx:
+            y_next = sol['sol'](t_next)
+            t_events[ev_idx - n_system_events].append(t_next)
+            y_events[ev_idx - n_system_events].append(sol['sol'](t_next))
+            if event_functions[ev_idx].terminal:
+                terminate = True
         else:
             y_next = sol['sol'](t_next)
             if ev_idx < n_events-1:
@@ -319,7 +368,20 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
         t = np.append(t, t_next)
         y = np.append(y, sol['y'][:,idx], axis=1)
         y = np.append(y, np.array([y_next]).transpose(), axis=1)
+        if dense_output:
+            if len(ts) > 0 and ts[-1] == sol['sol'].ts[0]:
+                ts = np.concatenate((ts, sol['sol'].ts[1:]))
+            else:
+                ts = np.concatenate((ts, sol['sol'].ts))
+            interpolants += sol['sol'].interpolants
         t_cur = t_next
         y_cur = y_next
 
-    return {'t': t, 'y': y}
+    if dense_output:
+        ode_sol = OdeSolution(ts, interpolants)
+    else:
+        ode_sol = None
+
+    return OdeResult(t=t, y=y, sol=ode_sol, t_events=t_events, y_events=y_events, \
+                     nfev=nfev, njev=njev, nlu=nlu, status=sol['status'], \
+                     message=sol['message'], success=sol['success'])

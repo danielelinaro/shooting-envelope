@@ -54,29 +54,35 @@ class EnvelopeSolver (object):
     LTE_TOO_LARGE = 2
     
 
-    def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
-                 fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
-                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
+    def __init__(self, fun, t_span, y0, T_guess=None, T=None, max_step=1000,
+                 dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
-                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3, **kwargs):
+                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
+                 solver=solve_ivp, **kwargs):
 
         # number of dimensions of the system
         self.n_dim = len(y0)
         # tolerances for the computation of the envelope
-        self.rtol, self.atol = rtol, atol
-        # tolerances for the integration of the "fast" system
-        self.original_fun_rtol, self.original_fun_atol = fun_rtol, fun_atol
+        self.rtol, self.atol = env_rtol, env_atol
         # tolerance on the variation of the estimated period
-        self.dTtol = dTtol
+        self.dT_tol = dT_tol
         # max_step is in units of periods
         self.max_step = np.floor(max_step)
+
+        self.solver = solver
+        self.solver_kwargs = kwargs
 
         # whether to compute the envelope of the variational system
         self.is_variational = is_variational
 
         # whether we are dealing with a switching system
         self.is_switching_system = isinstance(fun, switching.SwitchingSystem)
-        
+
+        try:
+            jac = kwargs['jac']
+        except:
+            jac = None
+
         if not self.is_variational:
             self.original_fun = fun
             self.original_jac = jac
@@ -98,11 +104,6 @@ class EnvelopeSolver (object):
                 self.original_fun = fun
                 self.original_fun.variational_T = self.T_large
                 self.original_jac = fun.jac
-
-        self.original_jac_sparsity = jac_sparsity
-        self.original_fun_vectorized = vectorized
-        self.original_fun_method = fun_method
-        self.original_fun_kwargs = kwargs
 
         # how many period of the fast system have been integrated
         self.original_fun_period_eval = 0
@@ -282,7 +283,7 @@ class EnvelopeSolver (object):
             # correct the estimate
             y_next = self._compute_y_next(y_cur, f_cur, t_next, H, y_extrap)
 
-        if self.estimate_T and np.abs(self.T - self.T_new) > self.dTtol:
+        if self.estimate_T and np.abs(self.T - self.T_new) > self.dT_tol:
             return EnvelopeSolver.DT_TOO_LARGE
 
         if self.is_variational and self.compute_variational_LTE:
@@ -377,29 +378,9 @@ class EnvelopeSolver (object):
         
     def _envelope_fun(self,t,y,T_guess=None):
         if not self.estimate_T:
-            if not type(self.original_fun_method) is str:
-                if self.is_switching_system:
-                    self.original_fun.with_variational = False
-                sol = self.original_fun_method(self.original_fun, [t,t+self.T], y, \
-                                               jac=self.original_jac, \
-                                               jac_sparsity=self.original_jac_sparsity,
-                                               vectorized=self.original_fun_vectorized,
-                                               rtol=self.original_fun_rtol,
-                                               atol=self.original_fun_atol,
-                                               **self.original_fun_kwargs)
-            elif self.original_fun_method == 'BDF':
-                sol = solve_ivp(self.original_fun,[t,t+self.T],y,
-                                self.original_fun_method,jac=self.original_jac,
-                                jac_sparsity=self.original_jac_sparsity,
-                                vectorized=self.original_fun_vectorized,
-                                rtol=self.original_fun_rtol,
-                                atol=self.original_fun_atol)
-            else:
-                sol = solve_ivp(self.original_fun,[t,t+self.T],y,
-                                self.original_fun_method,
-                                vectorized=self.original_fun_vectorized,
-                                rtol=self.original_fun_rtol,
-                                atol=self.original_fun_atol)
+            if self.is_switching_system:
+                self.original_fun.with_variational = False
+            sol = self.solver(self.original_fun, [t,t+self.T], y, **self.solver_kwargs)
             self.t_new = t + self.T
             self.y_new = sol['y'][:,-1]
             if VERBOSE_DEBUG:
@@ -420,32 +401,27 @@ class EnvelopeSolver (object):
         events_fun.direction = 1
         events_fun.terminal = 1
 
-        if self.original_fun_method == 'BDF':
-            sol = solve_ivp(self.original_fun,[t,t+2*T_guess],y,
-                            self.original_fun_method,jac=self.original_jac,
-                            jac_sparsity=self.original_jac_sparsity,
-                            vectorized=self.original_fun_vectorized,
-                            events=events_fun,dense_output=True,
-                            rtol=self.original_fun_rtol,atol=self.original_fun_atol)
-        else:
-            sol = solve_ivp(self.original_fun,[t,t+2*T_guess],y,
-                            self.original_fun_method,vectorized=self.original_fun_vectorized,
-                            events=events_fun,dense_output=True,
-                            rtol=self.original_fun_rtol,atol=self.original_fun_atol)
+        if self.is_switching_system:
+            self.original_fun.with_variational = False
+        sol = self.solver(self.original_fun, [t,t+2*T_guess], y, \
+                          events=events_fun, dense_output=True, \
+                          **self.solver_kwargs)
 
         try:
-            T = sol['t_events'][0][1] - t
+            # find the first event that is not the initial time
+            idx, = np.where(sol['t_events'][0] > t)
+            T = sol['t_events'][0][idx[0]] - t
         except:
             T = T_guess
             if DEBUG:
                 print('EnvelopeSolver._envelope_fun(%.4e)> T = T_guess = %.3e.' % (t,T))
-                
+
         self.T_new = T
         self.t_new = t + self.T_new
         self.y_new = sol['sol'](self.t_new)
         if VERBOSE_DEBUG:
             print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.4f,%.4f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T_new))
-        self.original_fun_period_eval += 1.5
+        self.original_fun_period_eval += 1
         # return the "vector field" of the envelope
         return 1./self.T_new * (self.y_new - sol['sol'](t))
 
@@ -539,16 +515,16 @@ class EnvelopeSolver (object):
 
 
 class BEEnvelope (EnvelopeSolver):
-    def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
-                 fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
-                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
+    def __init__(self, fun, t_span, y0, T_guess=None, T=None, max_step=1000,
+                 dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
-                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3, **kwargs):
+                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
+                 solver=solve_ivp, **kwargs):
         super(BEEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
-                                         fun_rtol, fun_atol, dTtol, rtol, atol,
-                                         jac, jac_sparsity, vectorized, fun_method,
+                                         dT_tol, env_rtol, env_atol,
                                          vars_to_use, is_variational, T_var,
-                                         T_var_guess, var_rtol, var_atol, **kwargs)
+                                         T_var_guess, var_rtol, var_atol,
+                                         solver, **kwargs)
 
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
         #return fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, xtol=FSOLVE_XTOL)
@@ -580,16 +556,16 @@ class BEEnvelope (EnvelopeSolver):
 
 
 class TrapEnvelope (EnvelopeSolver):
-    def __init__(self, fun, t_span, y0, T_guess, T=None, max_step=1000,
-                 fun_rtol=1e-6, fun_atol=1e-8, dTtol=1e-2, rtol=1e-3, atol=1e-6,
-                 jac=None, jac_sparsity=None, vectorized=False, fun_method='RK45',
+    def __init__(self, fun, t_span, y0, T_guess=None, T=None, max_step=1000,
+                 dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
-                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3, **kwargs):
+                 T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
+                 solver=solve_ivp, **kwargs):
         super(TrapEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
-                                           fun_rtol, fun_atol, dTtol, rtol, atol,
-                                           jac, jac_sparsity, vectorized, fun_method,
+                                           dT_tol, env_rtol, env_atol,
                                            vars_to_use, is_variational, T_var,
-                                           T_var_guess, var_rtol, var_atol, **kwargs)
+                                           T_var_guess, var_rtol, var_atol,
+                                           solver, **kwargs)
         self.df_cur = np.zeros(self.n_dim)
         if self.is_variational:
             self.df_cur_var = np.zeros(self.n_dim**2)
