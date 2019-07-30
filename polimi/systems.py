@@ -34,8 +34,12 @@ class DynamicalSystem (object):
         N = self.n_dim
         phi = np.reshape(y[N:N+N**2], (N,N))
         J = self._J(t * T, y[:N])
-        return np.concatenate((T * self._fun(t*T, y[:N]), \
+        ydot = np.concatenate((T * self._fun(t*T, y[:N]), \
                                T * (J @ phi).flatten()))
+        if len(y) == N * (2 + N):
+            # we are estimating the period, too
+            ydot = np.concatenate((ydot, T * (J @ y[-N:]) + self._fun(t,y[:N])))
+        return ydot
 
 
     def jac(self, t, y):

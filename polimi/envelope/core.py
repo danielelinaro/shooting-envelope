@@ -15,36 +15,7 @@ if DEBUG:
 NEWTON_KRYLOV_FTOL = 1e-3
 FSOLVE_XTOL = 1e-1
 
-__all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope', 'EnvelopeInterp']
-
-
-class EnvelopeInterp (object):
-
-    def __init__(self, fun, sol, T):
-        self.fun = fun
-        self.sol = sol
-        self.T = T
-        self.t = None
-        self.y = None
-        self.total_integrated_time = 0
-
-    def __call__(self, t):
-        if t == self.t:
-            return self.y
-        t0 = np.floor(t/self.T) * self.T
-        if np.any(np.abs(self.sol['t'] - t0) < self.T/2):
-            idx = np.argmin(np.abs(self.sol['t'] - t0))
-            y0 = self.sol['y'][:,idx]
-        else:
-            start = np.where(self.sol['t'] < t0)[0][-1]
-            idx = np.arange(start, start+2)
-            y0 = interp1d(self.sol['t'][idx],self.sol['y'][:,idx])(t0)
-        sol = solve_ivp(self.fun, [t0,t], y0, method='RK45', rtol=1e-8, atol=1e-8)
-        self.total_integrated_time += t-t0
-        self.t = t
-        self.y = sol['y'][:,-1]
-        return self.y
-
+__all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope']
 
 
 class EnvelopeSolver (object):
@@ -54,14 +25,14 @@ class EnvelopeSolver (object):
     LTE_TOO_LARGE = 2
     
 
-    def __init__(self, fun, t_span, y0, T_guess=None, T=None, max_step=1000,
+    def __init__(self, system, t_span, y0, T_guess=None, T=None, max_step=1000,
                  dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
                  T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
                  solver=solve_ivp, **kwargs):
 
-        # number of dimensions of the system
-        self.n_dim = len(y0)
+        # the dynamical system
+        self.system = system
         # tolerances for the computation of the envelope
         self.rtol, self.atol = env_rtol, env_atol
         # tolerance on the variation of the estimated period
@@ -76,34 +47,19 @@ class EnvelopeSolver (object):
         self.is_variational = is_variational
 
         # whether we are dealing with a switching system
-        self.is_switching_system = isinstance(fun, switching.SwitchingSystem)
-
-        try:
-            jac = kwargs['jac']
-        except:
-            jac = None
+        self.is_switching_system = isinstance(system, switching.SwitchingSystem)
 
         if not self.is_variational:
-            self.original_fun = fun
-            self.original_jac = jac
             self.t_span = t_span
+            self.system.with_variational = False
         else:
-            if jac is None and not self.is_switching_system:
-                raise Exception('jac cannot be None if is_variational is True')
-
             self.T_large = t_span[1]
             if T is None:
                 T_guess /= t_span[1]
             else:
                 T /= t_span[1]
-
-            if not self.is_switching_system:
-                self.original_fun = lambda t,y: self.T_large * fun(t*self.T_large, y)
-                self.original_jac = lambda t,y: jac(t*self.T_large, y)
-            else:
-                self.original_fun = fun
-                self.original_fun.variational_T = self.T_large
-                self.original_jac = fun.jac
+            self.system.with_variational = True
+            self.system.variational_T = self.T_large
 
         # how many period of the fast system have been integrated
         self.original_fun_period_eval = 0
@@ -112,13 +68,13 @@ class EnvelopeSolver (object):
         self.y0 = np.array(y0)
         
         self.t = np.array([t_span[0]])
-        self.y = np.zeros((self.n_dim,1))
+        self.y = np.zeros((self.system.n_dim,1))
         self.y[:,0] = self.y0
-        self.f = np.zeros((self.n_dim,1))
+        self.f = np.zeros((self.system.n_dim,1))
 
         # indexes of the variables to use for the computation of the period
         if len(vars_to_use) == 0 or vars_to_use is None:
-            self.vars_to_use = np.arange(self.n_dim)
+            self.vars_to_use = np.arange(self.system.n_dim)
         else:
             self.vars_to_use = vars_to_use
 
@@ -168,6 +124,7 @@ class EnvelopeSolver (object):
 
 
     def solve(self):
+        n_dim = self.system.n_dim
         while self.t[-1] < self.t_span[1]:
             # make one step
             flag = self._step()
@@ -175,8 +132,8 @@ class EnvelopeSolver (object):
             if flag == EnvelopeSolver.SUCCESS:
                 # the step was successful (LTE and variation in period below threshold
                 self.t = np.append(self.t,self.t_next)
-                self.y = np.append(self.y,np.reshape(self.y_next,(self.n_dim,1)),axis=1)
-                self.f = np.append(self.f,np.reshape(self.f_next,(self.n_dim,1)),axis=1)
+                self.y = np.append(self.y,np.reshape(self.y_next,(n_dim,1)),axis=1)
+                self.f = np.append(self.f,np.reshape(self.f_next,(n_dim,1)),axis=1)
                 if self.estimate_T:
                     self.T = self.T_new
                 self.period.append(self.T)
@@ -230,11 +187,11 @@ class EnvelopeSolver (object):
                'period_eval': self.original_fun_period_eval}
         if self.is_variational:
             sol['M'] = [self.mono_mat[i] for i in idx[:-1]]
-            sol['y'] = np.zeros((self.n_dim+self.n_dim**2, len(idx)))
-            sol['y'][:self.n_dim,:] = self.y[:,idx]
-            sol['y'][self.n_dim:,0] = np.eye(self.n_dim).flatten()
+            sol['y'] = np.zeros((n_dim+n_dim**2, len(idx)))
+            sol['y'][:n_dim,:] = self.y[:,idx]
+            sol['y'][n_dim:,0] = np.eye(n_dim).flatten()
             for i,mat in enumerate(sol['M']):
-                sol['y'][self.n_dim:,i+1] = (mat @ np.reshape(sol['y'][self.n_dim:,i],(self.n_dim,self.n_dim))).flatten()
+                sol['y'][n_dim:,i+1] = (mat @ np.reshape(sol['y'][n_dim:,i],(n_dim,n_dim))).flatten()
             sol['var'] = {'t': np.array(self.t_var), \
                           'y': np.array([y.flatten() for y in self.y_var]).transpose()}
 
@@ -291,7 +248,7 @@ class EnvelopeSolver (object):
             t0 = t_cur
             t1 = t_cur + self.T_var
             t2 = t_cur + n_periods_var * self.T_var
-            y0_var = np.eye(self.n_dim)
+            y0_var = np.eye(self.system.n_dim)
             for mat in self.mono_mat:
                 y0_var = mat @ y0_var
             y1_var = M_var @ y0_var
@@ -349,12 +306,13 @@ class EnvelopeSolver (object):
 
 
     def _one_period_step(self):
+        n_dim = self.system.n_dim
         if self.is_variational:
             M,M_var,self.T_var = self._compute_monodromy_matrix(self.t[-1],self.y[:,-1])
             self.mono_mat.append(M)
             ### TODO: check the following code
             if self.compute_variational_LTE:
-                y0_var = np.eye(self.n_dim)
+                y0_var = np.eye(n_dim)
                 for mat in self.mono_mat:
                     y0_var = M_var @ y0_var
                 y1_var = M_var @ y0_var
@@ -367,8 +325,8 @@ class EnvelopeSolver (object):
                 self.y_var.append(y2_var)
         self._envelope_fun(self.t[-1],self.y[:,-1])
         self.t = np.append(self.t,self.t_new)
-        self.y = np.append(self.y,np.reshape(self.y_new,(self.n_dim,1)),axis=1)
-        self.f = np.append(self.f,np.reshape(self._envelope_fun(self.t[-1],self.y[:,-1]),(self.n_dim,1)),axis=1)
+        self.y = np.append(self.y,np.reshape(self.y_new,(n_dim,1)),axis=1)
+        self.f = np.append(self.f,np.reshape(self._envelope_fun(self.t[-1],self.y[:,-1]),(n_dim,1)),axis=1)
         if self.estimate_T:
             self.T = self.T_new
         self.H_new = self.T
@@ -377,23 +335,24 @@ class EnvelopeSolver (object):
 
         
     def _envelope_fun(self,t,y,T_guess=None):
+        with_variational = self.system.with_variational
+        self.system.with_variational = False
         if not self.estimate_T:
-            if self.is_switching_system:
-                self.original_fun.with_variational = False
-            sol = self.solver(self.original_fun, [t,t+self.T], y, **self.solver_kwargs)
+            sol = self.solver(self.system, [t,t+self.T], y, **self.solver_kwargs)
             self.t_new = t + self.T
             self.y_new = sol['y'][:,-1]
             if VERBOSE_DEBUG:
                 print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.6f,%.6f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T))
             # return the "vector field" of the envelope
             self.original_fun_period_eval += 1
+            self.system.with_variational = with_variational
             return 1./self.T * (sol['y'][:,-1] - y)
 
         if T_guess is None:
             T_guess = self.T
         # find the equation of the plane containing y and
         # orthogonal to fun(t,y)
-        f = self.original_fun(t,y)
+        f = self.system(t,y)
         w = f[self.vars_to_use] / np.linalg.norm(f[self.vars_to_use])
         b = -np.dot(w, y[self.vars_to_use])
 
@@ -401,9 +360,7 @@ class EnvelopeSolver (object):
         events_fun.direction = 1
         events_fun.terminal = 1
 
-        if self.is_switching_system:
-            self.original_fun.with_variational = False
-        sol = self.solver(self.original_fun, [t,t+2*T_guess], y, \
+        sol = self.solver(self.system, [t,t+2*T_guess], y, \
                           events=events_fun, dense_output=True, \
                           **self.solver_kwargs)
 
@@ -422,21 +379,28 @@ class EnvelopeSolver (object):
         if VERBOSE_DEBUG:
             print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.4f,%.4f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T_new))
         self.original_fun_period_eval += 1
+        self.system.with_variational = with_variational
         # return the "vector field" of the envelope
         return 1./self.T_new * (self.y_new - sol['sol'](t))
 
 
     def _variational_system(self, t, y):
-        N = self.n_dim
+        n_dim = self.system.n_dim
         T = self.T_large
-        J = self.original_jac(t,y[:N])
-        phi = np.reshape(y[N:N+N**2],(N,N))
-        return np.concatenate((self.original_fun(t, y[:self.n_dim]), \
+        J = self.system.jac(t,y[:n_dim])
+        phi = np.reshape(y[n_dim:n_dim+n_dim**2],(n_dim,n_dim))
+        return np.concatenate((self.system(t, y[:n_dim]), \
                                T * (J @ phi).flatten()))
 
 
     def _compute_monodromy_matrix(self, t, y, T_var_guess=None):
-        y_ext = np.concatenate((y, np.eye(self.n_dim).flatten()))
+        n_dim = self.system.n_dim
+        y_ext = np.concatenate((y, np.eye(n_dim).flatten()))
+        with_variational = self.system.with_variational
+        self.system.with_variational = True
+        solver_kwargs = self.solver_kwargs.copy()
+        if 'jac' in solver_kwargs:
+            solver_kwargs.pop('jac')
 
         if self.estimate_T_var:
             if T_var_guess is None:
@@ -444,12 +408,8 @@ class EnvelopeSolver (object):
 
             # find the equation of the plane containing y and
             # orthogonal to _variational_system(t,y)
-            vars_to_use = np.arange(self.n_dim, self.n_dim + self.n_dim**2)
-            if not self.is_switching_system:
-                f = self._variational_system(t,y_ext)
-            else:
-                self.original_fun.with_variational = True
-                f = self.original_fun(t,y_ext)
+            vars_to_use = np.arange(n_dim, n_dim + n_dim**2)
+            f = self.system(t,y_ext)
 
             w = f[vars_to_use] / np.linalg.norm(f[vars_to_use])
             b = -np.dot(w, y_ext[vars_to_use])
@@ -461,55 +421,43 @@ class EnvelopeSolver (object):
 
             t_stop = t + max([self.T, 1.5*T_var_guess])
 
-            if not self.is_switching_system:
-                sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
-                                rtol=self.original_fun_rtol, atol=self.original_fun_atol,
-                                events=events_fun, dense_output=True)
-            else:
-                self.original_fun.with_variational = True
-                sol = self.original_fun_method(self.original_fun, [t,t_stop], y_ext, \
-                                               rtol=self.original_fun_rtol,
-                                               atol=self.original_fun_atol,
-                                               **self.original_fun_kwargs)
-                import ipdb
-                ipdb.set_trace()
+            sol = self.solver(self.system, [t,t_stop], y_ext, \
+                              events=events_fun, dense_output=True,
+                              **solver_kwargs)
 
-            T_var = sol['t_events'][0][1] - t
+            idx, = np.where(sol['t_events'][0] > t)
+            idx = idx[0]
+            T_var = sol['t_events'][0][idx] - t
             y_ev = sol['sol'](sol['t_events'][1])
-            M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy(),
-            y_ev = sol['sol'](sol['t_events'][0][1])
-            M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy(),
+            M = np.reshape(y_ev[n_dim:],(n_dim,n_dim)).copy(),
+            y_ev = sol['sol'](sol['t_events'][0][idx])
+            M_var = np.reshape(y_ev[n_dim:],(n_dim,n_dim)).copy(),
+            self.system.with_variational = with_variational
             return M, M_var, T_var
 
+        ### CHECK why don't I compute the variational LTE if estimate_T_var is True??
         if self.compute_variational_LTE:
             t_stop = t + max([self.T, self.T_var])
             events_fun = lambda tt,yy: tt - (t + min([self.T, self.T_var]))
             # compute the monodromy matrix by integrating the variational system
-            sol = solve_ivp(self._variational_system, [t,t_stop], y_ext,
-                            rtol=self.original_fun_rtol, atol=self.original_fun_atol,
-                            events=events_fun, dense_output=True)
+            sol = self.solver(self.system, [t,t_stop], y_ext, \
+                              events=events_fun, dense_output=True,
+                              **solver_kwargs)
             y_ev = sol['sol'](sol['t_events'][0])
             if t_stop == t + self.T_var:
                 # the variational system has a larger period than the original one
-                M_var = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
-                M = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
+                M_var = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
+                M = np.reshape(y_ev[n_dim:],(n_dim,n_dim)).copy()
             else:
                 # the variational system has a smaller period than the original one
-                M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
-                M_var = np.reshape(y_ev[self.n_dim:],(self.n_dim,self.n_dim)).copy()
+                M = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
+                M_var = np.reshape(y_ev[n_dim:],(n_dim,n_dim)).copy()
+            self.system.with_variational = with_variational
             return M, M_var, self.T_var
 
-        if not self.is_switching_system:
-            sol = solve_ivp(self._variational_system, [t,t+self.T], y_ext,
-                            rtol=self.original_fun_rtol, atol=self.original_fun_atol)
-        else:
-            self.original_fun.with_variational = True
-            sol = self.original_fun_method(self.original_fun, [t,t+self.T], y_ext, \
-                                           rtol=self.original_fun_rtol,
-                                           atol=self.original_fun_atol,
-                                           **self.original_fun_kwargs)
-
-        M = np.reshape(sol['y'][self.n_dim:,-1],(self.n_dim,self.n_dim)).copy()
+        sol = self.solver(self.system, [t,t+self.T], y_ext, **kwargs)
+        M = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
+        self.system.with_variational = with_variational
         return M, None, -1
 
 
@@ -566,9 +514,9 @@ class TrapEnvelope (EnvelopeSolver):
                                            vars_to_use, is_variational, T_var,
                                            T_var_guess, var_rtol, var_atol,
                                            solver, **kwargs)
-        self.df_cur = np.zeros(self.n_dim)
+        self.df_cur = np.zeros(self.system.n_dim)
         if self.is_variational:
-            self.df_cur_var = np.zeros(self.n_dim**2)
+            self.df_cur_var = np.zeros(self.system.n_dim**2)
 
 
     def _one_period_step(self):

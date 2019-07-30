@@ -3,8 +3,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 
-from polimi.envelope import TrapEnvelope, BEEnvelope, EnvelopeInterp
+from polimi.envelope import TrapEnvelope, BEEnvelope
 from polimi import vdp, vdp_jac
+
+
+class EnvelopeInterp (object):
+
+    def __init__(self, fun, sol, T):
+        self.fun = fun
+        self.sol = sol
+        self.T = T
+        self.t = None
+        self.y = None
+        self.total_integrated_time = 0
+
+    def __call__(self, t):
+        if t == self.t:
+            return self.y
+        t0 = np.floor(t/self.T) * self.T
+        if np.any(np.abs(self.sol['t'] - t0) < self.T/2):
+            idx = np.argmin(np.abs(self.sol['t'] - t0))
+            y0 = self.sol['y'][:,idx]
+        else:
+            start = np.where(self.sol['t'] < t0)[0][-1]
+            idx = np.arange(start, start+2)
+            y0 = interp1d(self.sol['t'][idx],self.sol['y'][:,idx])(t0)
+        sol = solve_ivp(self.fun, [t0,t], y0, method='RK45', rtol=1e-8, atol=1e-8)
+        self.total_integrated_time += t-t0
+        self.t = t
+        self.y = sol['y'][:,-1]
+        return self.y
 
 
 def variational_system(fun, jac, t, y, T):
