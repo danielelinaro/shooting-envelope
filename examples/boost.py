@@ -244,16 +244,16 @@ def variational_envelope(N_periods=100, eig_vect=None, compare=False):
 
     rtol = 1e-1
     atol = 1e-2
-    be_var_solver = BEEnvelope(boost, [0,T_large], y0, T_guess=None, T=T_small, jac=boost.jac, \
-                               rtol=rtol, atol=atol, fun_method=solve_ivp_switch, \
-                               max_step=1000, fun_rtol=fun_rtol, fun_atol=fun_atol, \
+    be_var_solver = BEEnvelope(boost, [0,T_large], y0, T_guess=None, T=T_small, \
+                               env_rtol=rtol, env_atol=atol, max_step=1000,
                                is_variational=True, T_var_guess=None, T_var=None, \
-                               var_rtol=rtol, var_atol=atol, method='BDF')
-    trap_var_solver = TrapEnvelope(boost, [0,T_large], y0, T_guess=None, T=T_small, jac=boost.jac, \
-                                   rtol=rtol, atol=atol, fun_method=solve_ivp_switch, \
-                                   max_step=1000, fun_rtol=fun_rtol, fun_atol=fun_atol, \
+                               var_rtol=rtol, var_atol=atol, solver=solve_ivp_switch, \
+                               rtol=fun_rtol, atol=fun_atol, method='BDF')
+    trap_var_solver = TrapEnvelope(boost, [0,T_large], y0, T_guess=None, T=T_small, \
+                                   env_rtol=rtol, env_atol=atol, max_step=1000,
                                    is_variational=True, T_var_guess=None, T_var=None, \
-                                   var_rtol=rtol, var_atol=atol, method='BDF')
+                                   var_rtol=rtol, var_atol=atol, solver=solve_ivp_switch, \
+                                   rtol=fun_rtol, atol=fun_atol, method='BDF')
     print('-' * 100)
     var_sol_be = be_var_solver.solve()
     print('-' * 100)
@@ -342,14 +342,13 @@ def shooting():
 
     estimate_T = False
 
-    shoot = EnvelopeShooting(boost, boost.n_dim, T_large, \
-                             estimate_T, T_small, boost.jac, \
-                             shooting_tol=1e-3, env_solver=BEEnvelope, \
+    shoot = EnvelopeShooting(boost, T_large, estimate_T, T_small, \
+                             tol=1e-3, env_solver=BEEnvelope, \
                              env_rtol=1e-2, env_atol=1e-3, \
                              var_rtol=1e-1, var_atol=1e-2, \
-                             fun_rtol=fun_rtol, fun_atol=fun_atol, \
-                             env_fun_method=solve_ivp_switch, \
-                             method='BDF')
+                             fun_solver=solve_ivp_switch, \
+                             rtol=fun_rtol, atol=fun_atol, \
+                             method='BDF', jac=boost.jac)
     sol_shoot = shoot.run(y0_guess)
     print('Number of iterations: %d.' % sol_shoot['n_iter'])
 
@@ -389,17 +388,17 @@ if __name__ == '__main__':
     #system()
 
     ## Example 2
-    envelope()
+    #envelope()
 
     ## Example 3
-    #variational_envelope()
+    #variational_integration(N_periods=100, compare=True)
 
     ## Example 4
-    #variational_integration(N_periods=100, compare=True)
+    #variational_envelope()
 
     ## Example 5
     #eig = variational_integration(N_periods=1, compare=False)
     #variational_envelope(N_periods=100, eig_vect=eig, compare=True)
 
     ## Example 6
-    #shooting()
+    shooting()

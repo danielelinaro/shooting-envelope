@@ -455,7 +455,7 @@ class EnvelopeSolver (object):
             self.system.with_variational = with_variational
             return M, M_var, self.T_var
 
-        sol = self.solver(self.system, [t,t+self.T], y_ext, **kwargs)
+        sol = self.solver(self.system, [t,t+self.T], y_ext, **solver_kwargs)
         M = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
         self.system.with_variational = with_variational
         return M, None, -1
