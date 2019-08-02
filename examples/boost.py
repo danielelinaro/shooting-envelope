@@ -18,6 +18,12 @@ def system():
     Vin = 5
     Vref = 5
 
+    def Vref_fun(t):
+        n_period = int(t / T)
+        if n_period > 50 and n_period < 75:
+            return Vref*0.8
+        return Vref
+
     t0 = 0
     t_end = 50*T
     t_span = np.array([t0, t_end])
@@ -124,6 +130,11 @@ def variational_integration(N_periods=100, compare=False):
     Vin = 5
     Vref = 5
 
+    def Vref_fun(t):
+        if t > 1/3 and t <= 2/3:
+            return Vref*0.9
+        return Vref
+
     boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
 
     fun_rtol = 1e-10
@@ -159,6 +170,8 @@ def variational_integration(N_periods=100, compare=False):
     y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
 
     sol = solve_ivp_switch(boost, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+    #t_events = np.sort(np.r_[sol['t_sys_events'][0], sol['t_sys_events'][1]])
+    #np.savetxt('t_events_beat.txt',t_events,fmt='%14.6e')
 
     #np.savetxt('boost_variational.txt', pack(sol['t'],sol['y']), fmt='%.3e')
 
@@ -176,8 +189,10 @@ def variational_integration(N_periods=100, compare=False):
         idx, = np.where(t < T_large)
 
     labels = [r'$V_C$ (V)', r'$I_L$ (A)']
-    fig,ax = plt.subplots(3,2,sharex=True)
+    fig,ax = plt.subplots(3,2,sharex=True,figsize=(9,5))
     for i in range(2):
+        if i == 1:
+            ax[0,i].plot([sol['t'][0],sol['t'][-1]],[0,0],'r--')
         ax[0,i].plot(sol['t'],sol['y'][i],'k',lw=1)
         ax[0,i].set_ylabel(labels[i])
         ax[0,i].set_xlim([0,1])
@@ -192,6 +207,7 @@ def variational_integration(N_periods=100, compare=False):
     if compare:
         ax[1,0].legend(loc='best')
 
+    plt.savefig('boost_const_Vref.pdf')
     plt.show()
 
     return v
@@ -391,7 +407,7 @@ if __name__ == '__main__':
     #envelope()
 
     ## Example 3
-    #variational_integration(N_periods=100, compare=True)
+    variational_integration(N_periods=100, compare=False)
 
     ## Example 4
     #variational_envelope()
@@ -401,4 +417,4 @@ if __name__ == '__main__':
     #variational_envelope(N_periods=100, eig_vect=eig, compare=True)
 
     ## Example 6
-    shooting()
+    #shooting()

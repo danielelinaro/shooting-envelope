@@ -105,7 +105,10 @@ class Boost (SwitchingSystem):
         self.F = 1./T
         self.phi = clock_phase
         self.ki = ki
-        self.Vref = Vref
+        if callable(Vref):
+            self.Vref = Vref
+        else:
+            self.Vref = lambda t: Vref
         self.Vin = Vin
         self.R = R
         self.L = L
@@ -152,7 +155,7 @@ class Boost (SwitchingSystem):
 
 
     def manifold(self, t, y):
-        return self.ki * y[1] - self.Vref
+        return self.ki * y[1] - self.Vref(t)
 
 
     def manifold_der(self, t, y):
@@ -188,6 +191,8 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
     y = np.array([[] for _ in range(y0.shape[0])])
 
     n_system_events = len(sys.event_functions)
+    t_sys_events = [[] for _ in range(n_system_events)]
+    y_sys_events = [[] for _ in range(n_system_events)]
 
     # the event functions of the original system
     event_functions = sys.event_functions.copy()
@@ -259,7 +264,9 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
                 terminate = True
         else:
             y_next = sol['sol'](t_next)
-            if ev_idx < n_events-1:
+            if ev_idx < n_system_events:
+                t_sys_events[ev_idx].append(t_next)
+                y_sys_events[ev_idx].append(y_next)
                 S = sys.handle_event(ev_idx, t_next, y_next)
                 if sys.with_variational:
                     N = sys.n_dim
@@ -285,5 +292,6 @@ def solve_ivp_switch(sys, t_span, y0, **kwargs):
         ode_sol = None
 
     return OdeResult(t=t, y=y, sol=ode_sol, t_events=t_events, y_events=y_events, \
+                     t_sys_events=t_sys_events, y_sys_events=y_sys_events, \
                      nfev=nfev, njev=njev, nlu=nlu, status=sol['status'], \
                      message=sol['message'], success=sol['success'])
