@@ -110,7 +110,10 @@ class Boost (SwitchingSystem):
         else:
             self.Vref = lambda t: Vref
         self.Vin = Vin
-        self.R = R
+        if callable(R):
+            self.R = R
+        else:
+            self.R = lambda t: R
         self.L = L
         self.C = C
         self.Rs = Rs
@@ -131,11 +134,11 @@ class Boost (SwitchingSystem):
 
 
     def _fun(self, t, y):
-        return (self.A[self.vector_field_index] @ y) + self.B
+        return (self.A[self.vector_field_index](t) @ y) + self.B
 
 
     def _J(self, t, y):
-        return self.A[self.vector_field_index]
+        return self.A[self.vector_field_index](t)
 
 
     def _handle_event(self, event_index, t, y):
@@ -173,8 +176,8 @@ class Boost (SwitchingSystem):
 
 
     def _make_matrixes(self):
-        self.A = [np.array([ [-1/(self.R*self.C), 0],   [0, -self.Rs/self.L]    ]), \
-                  np.array([ [-1/(self.R*self.C), 1/self.C], [-1/self.L, -self.Rs/self.L] ])]
+        self.A = [lambda t: np.array([ [-1/(self.R(t)*self.C), 0],   [0, -self.Rs/self.L]    ]), \
+                  lambda t: np.array([ [-1/(self.R(t)*self.C), 1/self.C], [-1/self.L, -self.Rs/self.L] ])]
         self.B  = np.array([0, self.Vin/self.L])
 
 

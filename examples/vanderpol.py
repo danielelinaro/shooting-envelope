@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from polimi.systems import VanderPol
 from polimi.envelope import BEEnvelope, TrapEnvelope
 
+
 def system():
     epsilon = 1e-3
     A = [10,1]
@@ -92,7 +93,7 @@ def envelope():
 def variational_envelope():
     epsilon = 1e-3
     A = [10,1]
-    T = [4,400]
+    T = [4,200]
     T_large = max(T)
     T_small = min(T)
     T_small_guess = min(T) * 0.95
@@ -133,23 +134,49 @@ def variational_envelope():
     eig,_ = np.linalg.eig(np.reshape(var_sol_trap['y'][2:,-1],(2,2)))
     print('TRAP approximate eigenvalues:', eig)
 
-    plt.subplot(1,2,1)
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(var_sol_be['t'],var_sol_be['y'][0],'ro')
-    plt.plot(var_sol_trap['t'],var_sol_trap['y'][0],'go')
-    plt.subplot(1,2,2)
-    plt.plot(t_span_var,[0,0],'b')
-    plt.plot(sol['t'],sol['y'][2],'k')
-    plt.plot(var_sol_be['t'],var_sol_be['y'][2],'ro')
-    for i in range(0,len(var_sol_be['var']['t']),3):
-        plt.plot(var_sol_be['var']['t'][i:i+3],var_sol_be['var']['y'][0,i:i+3],'c.-')
-    plt.plot(var_sol_trap['t'],var_sol_trap['y'][2],'go')
-    for i in range(0,len(var_sol_trap['var']['t']),3):
-        plt.plot(var_sol_trap['var']['t'][i:i+3],var_sol_trap['var']['y'][0,i:i+3],'m.-')
+    light_gray = [.6,.6,.6]
+    dark_gray = [.3,.3,.3]
+    black = [0,0,0]
+    fig,(ax1,ax2) = plt.subplots(2,1,sharex=True,figsize=(3,3.5))
+    ax1.plot(sol['t'],sol['y'][0],color=light_gray,lw=1)
+    ax1.plot(var_sol_be['t'],var_sol_be['y'][0],'o-',lw=1,\
+             color=black,markerfacecolor='w',markersize=4)
+    #ax1.plot(var_sol_trap['t'],var_sol_trap['y'][0],'s',lw=1,\
+    #         color=light_gray,markerfacecolor='w',markersize=4)
+    ax1.set_ylabel('x')
+    ax1.set_xlim([0,1])
+    ax1.set_ylim([-9,9])
+    ax1.set_yticks(np.arange(-9,10,3))
+    #ax2.plot(t_span_var,[0,0],'b')
+    ax2.plot(sol['t'],sol['y'][2],color=light_gray,lw=1,label='Full solution')
+    ax2.plot(var_sol_be['t'],var_sol_be['y'][2],'o',lw=1,\
+             color=black,markerfacecolor='w',markersize=4)
+    for i in range(0,len(var_sol_be['var']['t'])-3,3):
+        if i == 0:
+            ax2.plot(var_sol_be['var']['t'][i:i+3],var_sol_be['var']['y'][0,i:i+3],'o-',\
+                     color=black,linewidth=1,markerfacecolor='w',markersize=4,\
+                     label='Envelope')
+        else:
+            ax2.plot(var_sol_be['var']['t'][i:i+3],var_sol_be['var']['y'][0,i:i+3],'o-',\
+                     color=black,linewidth=1,markerfacecolor='w',markersize=4)
+    ax2.legend(loc='best')
+    #ax2.plot(var_sol_trap['t'],var_sol_trap['y'][2],'s',lw=1,\
+    #         color=light_gray,markerfacecolor='w',markersize=4)
+    #for i in range(0,len(var_sol_trap['var']['t']),3):
+    #    ax2.plot(var_sol_trap['var']['t'][i:i+3],var_sol_trap['var']['y'][0,i:i+3],'.-',\
+    #             color=[1,0,1])
+    ax2.set_xlabel('Normalized time')
+    ax2.set_ylabel(r'$\Phi_{1,1}$')
+    ax2.set_xlim([0,1])
+    ax2.set_ylim([-1.2,1.2])
+    ax2.set_yticks(np.arange(-1,1.5,0.5))
+    plt.savefig('vanderpol_variational.pdf')
     plt.show()
 
 
 if __name__ == '__main__':
+    import polimi.utils
+    polimi.utils.set_rc_defaults()
     #system()
     #envelope()
     variational_envelope()
