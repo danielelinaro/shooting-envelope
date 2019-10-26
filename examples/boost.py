@@ -1,4 +1,5 @@
 
+import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,6 +12,7 @@ from polimi.shooting import EnvelopeShooting
 # for saving data
 pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=1)
 
+progname = os.path.basename(sys.argv[0])
 
 def system():
     T = 20e-6
@@ -47,16 +49,40 @@ def system():
                              rtol=fun_rtol, atol=fun_atol)
     print('Vector field index at the end of the second integration: %d.' % boost.vector_field_index)
 
-    fig,(ax1,ax2) = plt.subplots(2, 1, sharex=True)
-    ax1.plot([0, sol_b['t'][-1]*1e6], [Vin,Vin], 'b')
-    ax1.plot(sol_a['t']*1e6, sol_a['y'][0], 'k', lw=1)
-    ax1.plot(sol_b['t']*1e6, sol_b['y'][0], 'r', lw=1)
-    ax1.set_ylabel(r'$V_C$ (V)')
-    ax2.plot(sol_a['t']*1e6, sol_a['y'][1], 'k', lw=1)
-    ax2.plot(sol_b['t']*1e6, sol_b['y'][1], 'r', lw=1)
-    ax2.set_xlabel(r'Time ($\mu$s)')
-    ax2.set_ylabel(r'$I_L$ (A)')
-    ax2.set_xlim(t_span*2*1e6)
+    show_manifold = True
+    if show_manifold:
+        n_rows = 3
+    else:
+        n_rows = 2
+
+    fig,ax = plt.subplots(n_rows, 1, sharex=True, figsize=(6,4))
+    ax[0].plot([0, sol_b['t'][-1]*1e6], [Vin,Vin], 'b')
+    ax[0].plot(sol_a['t']*1e6, sol_a['y'][0], 'k', lw=1)
+    ax[0].plot(sol_b['t']*1e6, sol_b['y'][0], 'r', lw=1)
+    ax[0].set_ylabel(r'$V_C$ (V)')
+    ax[1].plot(sol_a['t']*1e6, sol_a['y'][1], 'k', lw=1)
+    ax[1].plot(sol_b['t']*1e6, sol_b['y'][1], 'r', lw=1)
+    ax[1].set_ylabel(r'$I_L$ (A)')
+    ax[1].set_xlim(t_span*2*1e6)
+    if show_manifold:
+        iL = sol_a['y'][1]
+        t = sol_a['t']
+        n = len(t)
+        ramp = np.zeros(n)
+        k = 0
+        for i in range(n):
+            if t[i] >= (k+1)*T:
+                k += 1
+            ramp[i] = (t[i] - k*T) / T
+        ax[2].plot(sol_a['t']*1e6, - Vref + ki*iL, 'c--', lw=1, label=r'$k_i I_L - V_{ref}$')
+        ax[2].plot(sol_a['t']*1e6, Vref - ki*iL, 'g', lw=1, label=r'$V_{ref} - k_i I_L$')
+        ax[2].plot(sol_a['t']*1e6, ramp, 'm', lw=1, label=r'$V_{ramp}$')
+        ax[2].plot(sol_a['t']*1e6, ramp - (Vref - ki*iL), 'y', lw=1, label='Manifold')
+        ax[2].plot([0, sol_a['t'][-1]*1e6], [0,0], 'b')
+        ax[2].set_xlabel(r'Time ($\mu$s)')
+        ax[2].legend(loc='best')
+    else:
+        ax[1].set_xlabel(r'Time ($\mu$s)')
     plt.show()
 
 
@@ -632,25 +658,59 @@ def shooting():
     plt.show()
 
 
+def eig_comparison():
+    eig = variational_integration(N_periods=1, compare=False)
+    variational_envelope(N_periods=100, eig_vect=eig, compare=True)
+
+
+cmds = {'system': system, 'system-var-R': system_var_R, 'envelope': envelope, \
+        'envelope-var-R': envelope_var_R, 'variational-envelope': variational_envelope, \
+        'shooting': shooting, 'eig': eig_comparison, \
+        'variational-integration': variational_integration, \
+        'variational-integration-var-R': variational_integration_var_R}
+
+
+cmd_descriptions = {'system': 'integrate the boost dynamical system', \
+                    'system-var-R': 'integrate the boost dynamical system with varying load resistance', \
+                    'envelope': 'compute the envelope of the boost', \
+                    'envelope-var-R': 'compute the envelope of the boost with varying load resistance', \
+                    'variational-envelope': 'compute the envelope of the boost with variational part', \
+                    'shooting': 'perform a shooting analysis of the boost', \
+                    'eig': 'compare eigenvalues obtained with full and envelope variational systems', \
+                    'variational-integration': 'integrate the boost and its variational part', \
+                    'variational-integration-var-R': 'integrate the boost with varying load and its variational part'}
+
+
+def list_commands():
+    print('\nThe following are accepted commands:')
+    nch = 0
+    for cmd in cmds:
+        if len(cmd) > nch:
+            nch = len(cmd)
+    fmt = '\t{:<%ds} {}' % (nch + 5)
+    for i,cmd in enumerate(cmds):
+        print(fmt.format(cmd,cmd_descriptions[cmd]))
+
+
+def usage():
+    print('usage: {} command'.format(progname))
+    list_commands()
+
+
 if __name__ == '__main__':
-    ## Example 1
-    #system()
-    #system_var_R()
+    if len(sys.argv) != 2:
+        usage()
+        sys.exit(1)
 
-    ## Example 2
-    #envelope()
-    #envelope_var_R()
+    if sys.argv[1] in ('-h', '--help', 'help'):
+        usage()
+        sys.exit(0)
 
-    ## Example 3
-    #variational_integration(N_periods=100, compare=False)
-    #variational_integration_var_R(N_periods=100, compare=False)
+    if not sys.argv[1] in cmds:
+        print('{}: {}: unknown command.'.format(progname, sys.argv[1]))
+        list_commands()
+        sys.exit(1)
 
-    ## Example 4
-    #variational_envelope()
+    cmds[sys.argv[1]]()
 
-    ## Example 5
-    #eig = variational_integration(N_periods=1, compare=False)
-    #variational_envelope(N_periods=100, eig_vect=eig, compare=True)
 
-    ## Example 6
-    shooting()
