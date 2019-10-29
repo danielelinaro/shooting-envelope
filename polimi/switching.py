@@ -92,7 +92,8 @@ class Boost (SwitchingSystem):
     def __init__(self, vector_field_index,
                  T=20e-6, ki=1.5, Vref=5, Vin=5, R=5,
                  L=10e-6, C=47e-6, Rs=0, clock_phase=0,
-                 with_variational=False, variational_T=1):
+                 with_variational=False, variational_T=1,
+                 use_compensating_ramp=False):
 
         if not with_variational:
             if not variational_T is None and variational_T != 1:
@@ -118,9 +119,11 @@ class Boost (SwitchingSystem):
         self.C = C
         self.Rs = Rs
 
+        self.with_ramp = 1 if use_compensating_ramp else 0
+
         self._make_matrixes()
 
-        self.event_functions = [lambda t,y: Boost.manifold(self, t, y), \
+        self.event_functions = [lambda t,y: Boost.manifold(self, t, y),
                                 lambda t,y: Boost.clock(self, t*self.variational_T, y)]
         for event_fun in self._event_functions:
             event_fun.direction = 1
@@ -129,7 +132,7 @@ class Boost (SwitchingSystem):
         self.event_derivatives = [lambda t,y: Boost.manifold_der(self, t*self.variational_T, y),
                                   lambda t,y: Boost.clock_der(self, t*self.variational_T, y)]
 
-        self.event_gradients = [lambda t,y: Boost.manifold_grad(self, t*self.variational_T, y),
+        self.event_gradients = [lambda t,y: Boost.manifold_grad(self, t*self.variational_T, y), \
                                 lambda t,y: Boost.clock_grad(self, t*self.variational_T, y)]
 
 
@@ -158,11 +161,12 @@ class Boost (SwitchingSystem):
 
 
     def manifold(self, t, y):
-        return self.ki * y[1] - self.Vref(t)
+        ramp = (t % self.T) / self.T
+        return self.with_ramp * ramp + self.ki * y[1] - self.Vref(t)
 
 
     def manifold_der(self, t, y):
-        return 0
+        return self.with_ramp / self.T
 
 
     def manifold_grad(self, t, y):

@@ -4,6 +4,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+import argparse as arg
 
 from polimi.switching import Boost, solve_ivp_switch
 from polimi.envelope import BEEnvelope, TrapEnvelope
@@ -14,7 +15,7 @@ pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=
 
 progname = os.path.basename(sys.argv[0])
 
-def system():
+def system(use_ramp):
     T = 20e-6
     ki = 1
     Vin = 5
@@ -35,7 +36,7 @@ def system():
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0, use_compensating_ramp=use_ramp)
 
     print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
     sol_a = solve_ivp_switch(boost, t_span, y0, \
@@ -86,7 +87,7 @@ def system():
     plt.show()
 
 
-def system_var_R():
+def system_var_R(use_ramp):
     T = 20e-6
     ki = 1
     Vin = 5
@@ -96,66 +97,50 @@ def system_var_R():
     R0 = 5
 
     t0 = 0
-    t_end = 100*T
+    t_end = 2 / 50
     t_span = np.array([t0, t_end])
 
     #y0 = np.array([9.3124, 1.2804])
-    y0 = np.array([10.154335434351671, 1.623030961224813])
+    #y0 = np.array([10.154335434351671, 1.623030961224813])
+    y0 = np.array([2*Vin,1])
 
     fun_rtol = 1e-12
     fun_atol = 1e-14
 
     def R_fun(t):
-        n_period = int(t / T)
-        if n_period % 100 < 75:
-            return R0
-        return 2*R0
+        #n_period = int(t / T)
+        #if n_period % 100 < 75:
+        #    return R0
+        #return R0/2
+        F = 50 # [Hz]
+        dR0 = R0/10
+        return R0 - dR0/2 + dR0*np.sin(2*np.pi*F*t)
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun, use_compensating_ramp=use_ramp)
 
-    print('Vector field index at the beginning of the first integration: %d.' % boost.vector_field_index)
-    sol_a = solve_ivp_switch(boost, t_span, y0, \
-                             method='BDF', jac=boost.jac, \
-                             rtol=fun_rtol, atol=fun_atol)
-    print('Vector field index at the end of the first integration: %d.' % boost.vector_field_index)
-    #manifold = np.array([1 if boost.manifold(t,y) > 0 else 0 for t,y in zip(sol_a['t'],sol_a['y'].T)])
-    #clock_bin = np.array([1 if boost.clock(t,y) > 0 else 0 for t,y in zip(sol_a['t'],sol_a['y'].T)])
-    #clock = np.array([boost.clock(t,y) for t,y in zip(sol_a['t'],sol_a['y'].T)])
-    #plt.plot(sol_a['t']*1e6, manifold, 'k')
-    #plt.plot(sol_a['t']*1e6, clock, 'r')
-    #plt.plot(sol_a['t']*1e6, clock_bin, 'b')
-    #plt.show()
-    #import ipdb
-    #ipdb.set_trace()
-
-    print('Vector field index at the beginning of the second integration: %d.' % boost.vector_field_index)
-    sol_b = solve_ivp_switch(boost, sol_a['t'][-1]+np.array([0,100*T]), sol_a['y'][:,-1], \
-                             method='BDF', jac=boost.jac, \
-                             rtol=fun_rtol, atol=fun_atol)
-    print('Vector field index at the end of the second integration: %d.' % boost.vector_field_index)
-
-    np.savetxt('boost_a.txt', pack(sol_a['t'],sol_a['y']), fmt='%.6e')
-    np.savetxt('boost_b.txt', pack(sol_b['t'],sol_b['y']), fmt='%.6e')
+    print('Vector field index at the beginning of the integration: %d.' % boost.vector_field_index)
+    sol = solve_ivp_switch(boost, t_span, y0, \
+                           method='BDF', jac=boost.jac, \
+                           rtol=fun_rtol, atol=fun_atol)
+    print('Vector field index at the end of the integration: %d.' % boost.vector_field_index)
 
     fig,(ax1,ax2) = plt.subplots(2, 1, sharex=True)
-    ax1.plot(sol_a['t']*1e6, sol_a['y'][0], 'k', lw=1)
-    ax1.plot(sol_b['t']*1e6, sol_b['y'][0], 'r', lw=1)
+    ax1.plot(sol['t']*1e6, sol['y'][0], 'k', lw=1)
     ax1.set_ylabel(r'$V_C$ (V)')
-    ax2.plot(sol_a['t']*1e6, sol_a['y'][1], 'k', lw=1)
-    ax2.plot(sol_b['t']*1e6, sol_b['y'][1], 'r', lw=1)
+    ax2.plot(sol['t']*1e6, sol['y'][1], 'k', lw=1)
     ax2.set_xlabel(r'Time ($\mu$s)')
     ax2.set_ylabel(r'$I_L$ (A)')
-    ax2.set_xlim(t_span*2*1e6)
+    ax2.set_xlim(t_span*1e6)
     plt.show()
 
 
-def envelope():
+def envelope(use_ramp):
     T = 20e-6
     ki = 1
     Vin = 5
     Vref = 5
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0, use_compensating_ramp=use_ramp)
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
@@ -212,7 +197,7 @@ def envelope():
     plt.show()
 
 
-def envelope_var_R():
+def envelope_var_R(use_ramp):
     T = 40e-6
     ki = 1
     Vin = 5
@@ -230,7 +215,7 @@ def envelope_var_R():
             return R0
         return 2*R0
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun, use_compensating_ramp=use_ramp)
 
     t_tran = 100.1*T
 
@@ -286,7 +271,7 @@ def envelope_var_R():
     plt.show()
 
 
-def variational_integration(N_periods=100, compare=False):
+def variational_integration(use_ramp, N_periods=100, compare=False):
 
     T = 20e-6
     ki = 1
@@ -298,7 +283,7 @@ def variational_integration(N_periods=100, compare=False):
             return Vref*0.9
         return Vref
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0, use_compensating_ramp=use_ramp)
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
@@ -375,7 +360,7 @@ def variational_integration(N_periods=100, compare=False):
 
     return v
 
-def variational_integration_var_R(N_periods=100, compare=False):
+def variational_integration_var_R(use_ramp, N_periods=100, compare=False):
 
     T = 20e-6
     ki = 1
@@ -391,7 +376,7 @@ def variational_integration_var_R(N_periods=100, compare=False):
             return R0
         return 2*R0
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun, use_compensating_ramp=use_ramp)
 
     fun_rtol = 1e-12
     fun_atol = 1e-14
@@ -471,7 +456,7 @@ def variational_integration_var_R(N_periods=100, compare=False):
     return v
 
 
-def variational_envelope(N_periods=100, eig_vect=None, compare=False):
+def variational_envelope(use_ramp, N_periods=100, eig_vect=None, compare=False):
     if compare and eig_vect is None:
         print('You must provide the initial eigenvectors if compare is set to True.')
         return
@@ -481,7 +466,7 @@ def variational_envelope(N_periods=100, eig_vect=None, compare=False):
     Vin = 5
     Vref = 5
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0, use_compensating_ramp=use_ramp)
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
@@ -586,14 +571,14 @@ def variational_envelope(N_periods=100, eig_vect=None, compare=False):
     plt.show()
 
 
-def shooting():
+def shooting(use_ramp):
 
     T = 20e-6
     ki = 1
     Vin = 5
     Vref = 5
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, clock_phase=0, use_compensating_ramp=use_ramp)
 
     fun_rtol = 1e-10
     fun_atol = 1e-12
@@ -658,9 +643,9 @@ def shooting():
     plt.show()
 
 
-def eig_comparison():
-    eig = variational_integration(N_periods=1, compare=False)
-    variational_envelope(N_periods=100, eig_vect=eig, compare=True)
+def eig_comparison(use_ramp):
+    eig = variational_integration(use_ramp, N_periods=1, compare=False)
+    variational_envelope(use_ramp, N_periods=100, eig_vect=eig, compare=True)
 
 
 cmds = {'system': system, 'system-var-R': system_var_R, 'envelope': envelope, \
@@ -693,12 +678,13 @@ def list_commands():
 
 
 def usage():
-    print('usage: {} command'.format(progname))
+    print('usage: {} [--use-ramp] command'.format(progname))
     list_commands()
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
+
+    if len(sys.argv) < 2:
         usage()
         sys.exit(1)
 
@@ -706,11 +692,21 @@ if __name__ == '__main__':
         usage()
         sys.exit(0)
 
-    if not sys.argv[1] in cmds:
-        print('{}: {}: unknown command.'.format(progname, sys.argv[1]))
+    if sys.argv[1] == '--use-ramp':
+        use_ramp = True
+        if len(sys.argv) != 3:
+            usage()
+            sys.exit(1)
+        cmd = sys.argv[2]
+    else:
+        use_ramp = False
+        cmd = sys.argv[1]
+
+    if not cmd in cmds:
+        print('{}: {}: unknown command.'.format(progname, cmd))
         list_commands()
         sys.exit(1)
 
-    cmds[sys.argv[1]]()
+    cmds[cmd](use_ramp)
 
 
