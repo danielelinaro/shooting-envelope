@@ -1,5 +1,5 @@
 
-__all__ = ['DynamicalSystem', 'VanderPol', 'HindmarshRose']
+__all__ = ['DynamicalSystem', 'VanderPol', 'HindmarshRose', 'Neuron7', 'Neuron4']
 
 import numpy as np
 
@@ -149,33 +149,187 @@ class HindmarshRose (DynamicalSystem):
         ])
 
 
-#################################################################
-# Unused stuff - START
+class Neuron7 (DynamicalSystem):
 
-def vdp_auto(t,y,epsilon,A,T):
-    rho = 1
-    N_forcing = len(A)
-    N_eq = 2 + N_forcing*2
-    ydot = np.zeros(N_eq)
-    ydot[0] = y[1]
-    ydot[1] = epsilon*(1-y[0]**2)*y[1] - y[0]
-    for i in range(N_forcing):
-        j = 2*(i+1)
-        ydot[1] += A[i] * y[j]
-        sum_of_squares = y[j]**2 + y[j+1]**2
-        ydot[j+1] = 2*np.pi/T[i]*y[j] + y[j+1]*((rho-sum_of_squares)/(2*sum_of_squares))
-        ydot[j] = (rho - sum_of_squares - 2*y[j+1]*ydot[j+1]) / (2*y[j])
-    return ydot
+    def __init__(self, imposed_paths, with_variational=False, variational_T=1, **kwargs):
+        super(Neuron7, self).__init__(7, with_variational, variational_T)
 
-def polar(t,y,rho,T):
-    sum_of_squares = y[0]**2 + y[1]**2
-    ydot = np.zeros(2)
-    ydot[1] = 2*np.pi/T*y[0] + y[1]*((rho-sum_of_squares)/(2*sum_of_squares))
-    ydot[0] = (rho - sum_of_squares - 2*y[1]*ydot[1]) / (2*y[0])
-    return ydot
+        self._set_default_pars(**kwargs)
 
-# Unused stuff - END
-#################################################################
+        for name,value in self.default_pars.items():
+            try:
+                setattr(self, name, kwargs[name])
+            except:
+                setattr(self, name, value)
+
+        for name,value in kwargs.items():
+            if not name in self.default_pars:
+                print('parameter "{}" not among defaults.'.format(name))
+                setattr(self, name, value)
+
+        self.kNa3 = self.kNa ** 3
+        self.phi_Nab = self.phi(self.Nab)
+
+        self.n_inf = lambda v: self.x_inf(v, self.theta_n, self.sigma_n)
+        self.m_inf = lambda v: self.x_inf(v, self.theta_m, self.sigma_m)
+        self.h_inf = lambda v: self.x_inf(v, self.theta_h, self.sigma_h)
+        self.s_inf = lambda v: self.x_inf(v, self.theta_s, self.sigma_s)
+        self.tau_n = lambda v: self.tau_x(v, self.theta_n, self.sigma_n, self.t_n)
+        self.tau_m = lambda v: self.tau_x(v, self.theta_m, self.sigma_m, self.t_m)
+        self.tau_h = lambda v: self.tau_x(v, self.theta_h, self.sigma_h, self.t_h)
+
+        self.imposed_paths = imposed_paths
+        if self.imposed_paths:
+            self._ca_na_dynamics = self._elliptic_ca_na
+        else:
+            self._ca_na_dynamics = self._regular_ca_na
+
+
+    def compute_ss(self, v):
+        n = self.n_inf(v)
+        m = self.m_inf(v)
+        h = self.h_inf(v)
+        s = self.s_inf(v)
+        return n,m,h,s
+
+
+    def _set_default_pars(self, **kwargs):
+        self.default_pars = {'C': 45, 'k': 1., 'rpump': 200, 'epsilon': 7e-4, 'alpha': 6.6e-5,
+                             'gL': 3., 'gNa': 150., 'gK': 30., 'gsyn': 2.5, 'gCan': 4.,
+                             'EL': -60., 'ENa': 85., 'EK': -75., 'Esyn': 0., 'ECan': 0.,
+                             'theta_h': -30., 'theta_m': -36., 'theta_n': -30., 'theta_s': 15.,
+                             'kCan': 0.9, 'sigma_h': 5., 'sigma_m': -8.5, 'sigma_n': -5.,
+                             'sigma_s': -3., 'sigma_Can': -0.05, 't_h': 15., 't_m': 1.,
+                             't_n': 30., 'tau_s': 15., 'kNa': 10, 'Nab': 5, 'kCa': 22.5,
+                             'Cab': 0.05, 'kIP3': 1200}
+
+
+    def phi(self, x):
+        y = x**3
+        return y / (y + self.kNa3)
+
+
+    def x_inf(self, v, theta_x, sigma_x):
+        return 1. / (1. + np.exp((v - theta_x) / sigma_x))
+
+
+    def tau_x(self, v, theta_x, sigma_x, t_x):
+        return t_x / np.cosh((v - theta_x) / (2*sigma_x))
+
+
+    def iL(self, v):
+        return self.gL * (v - self.EL)
+
+
+    def iK(self, v, n):
+        return self.gK * n**4 * (v - self.EK)
+
+
+    def iNa(self, v, m, h):
+        return self.gNa * m**3 * h * (v - self.ENa)
+
+
+    def isyn(self, v, s):
+        return self.gsyn * s * (v - self.Esyn)
+
+
+    def iCan(self, v, ca):
+        return self.gCan * (v - self.ECan) / (1 + np.exp((ca - self.kCan) / self.sigma_Can))
+
+
+    def ipump(self, na):
+        return self.rpump * (self.phi(na) - self.phi_Nab)
+
+
+    def _regular_ca_na(self, ca, na, s, ican, ipump):
+        cadot = self.epsilon * (self.kIP3 * s - self.kCa * (ca - self.Cab))
+        nadot = - self.alpha * (ican + ipump)
+        return cadot,nadot
+
+
+    def _elliptic_ca_na(self, ca, na, s, ican, ipump):
+        cadot = - self.epsilon * self.d * (na - self.Nac)
+        nadot = self.epsilon / self.d * (ca - self.Cac)
+        return cadot,nadot
+
+
+    def _fun(self, t, y):
+        # the state variables
+        v = y[0]
+        n = y[1]
+        m = y[2]
+        h = y[3]
+        s = y[4]
+        ca = y[5]
+        na = y[6]
+
+        # calcium current
+        ican = self.iCan(v,ca)
+        # sodium pump current
+        ipump = self.ipump(na)
+
+        # the derivatives
+        vdot = - 1 / self.C * (self.iL(v) + self.iK(v,n) + self.iNa(v,m,h) + \
+                               self.isyn(v,s) + ican + ipump)
+        ndot = (self.n_inf(v) - n) / self.tau_n(v)
+        mdot = (self.m_inf(v) - m) / self.tau_m(v)
+        hdot = (self.h_inf(v) - h) / self.tau_h(v)
+        sdot = ((1 - s) * self.n_inf(v) - self.k * s) / self.tau_s
+        cadot,nadot = self._ca_na_dynamics(ca, na, s, ican, ipump)
+
+        return np.array([vdot, ndot, mdot, hdot, sdot, cadot, nadot])
+
+
+
+class Neuron4 (Neuron7):
+
+    def __init__(self, imposed_paths, with_variational=False, variational_T=1, **kwargs):
+        super(Neuron4, self).__init__(imposed_paths, with_variational, variational_T, **kwargs)
+        self.n_dim = 4
+
+
+    def _set_default_pars(self, **kwargs):
+        super(Neuron4, self)._set_default_pars(**kwargs)
+        # set the default values of parameters that are different
+        # from the 7-variable model
+        self.default_pars['gK'] = 15.
+        self.default_pars['gCan'] = 10.
+        self.default_pars['sigma_s'] = -8.
+        self.default_pars['k'] = 10.
+        self.default_pars['epsilon'] = 0.005
+        self.default_pars['theta_s'] = 10.
+        self.default_pars['kCan'] = 0.25
+        self.default_pars['kCa'] = 60.
+        self.default_pars['kIP3'] = 1700.
+        self.default_pars['rpump'] = 1500.
+
+
+    def _fun(self, t, y):
+        # the state variables
+        v = y[0]
+        n = y[1]
+        ca = y[2]
+        na = y[3]
+
+        # steady-state approximation for the other state variables
+        # of the 7-variable model
+        m = self.m_inf(v)
+        h = 1 - 1.08 * n
+        s_inf = self.s_inf(v)
+        s = s_inf / (s_inf + self.k)
+
+        # calcium current
+        ican = self.iCan(v,ca)
+        # sodium pump current
+        ipump = self.ipump(na)
+
+        # the derivatives
+        vdot = - 1 / self.C * (self.iL(v) + self.iK(v,n) + self.iNa(v,m,h) + \
+                               self.isyn(v,s) + ican + ipump)
+        ndot = (self.n_inf(v) - n) / self.tau_n(v)
+        cadot,nadot = self._ca_na_dynamics(ca, na, s, ican, ipump)
+        return np.array([vdot, ndot, cadot, nadot])
+
 
 
 def hr_test():
