@@ -145,11 +145,11 @@ class EnvelopeSolver (object):
                 if self.H > 2*self.T:
                     # reduce the step if this is greater than twice the oscillation period
                     self.H_new = np.floor(np.round(self.H/self.T)/2) * self.T
-                    msg = 'T/2'
+                    msg = 'DT T/2'
                 else:
                     # otherwise simply move the integration one period forward
                     self._one_period_step()
-                    msg = '1T'
+                    msg = 'DT 1T'
             elif flag == EnvelopeSolver.LTE_TOO_LARGE:
                 # the LTE was above threshold: _step has already changed the value of H_new
                 msg = 'LTE'
@@ -170,6 +170,8 @@ class EnvelopeSolver (object):
                     color_fun = colors.red
                 elif msg == 'LTE 1T':
                     color_fun = colors.yellow
+                elif 'DT' in msg:
+                    color_fun = colors.magenta
                 H_str = color_fun('%.3e' % H)
                 N_str = color_fun('%4d' % N)
                 t_cur_str = color_fun('%.4e' % t_cur)
@@ -240,7 +242,7 @@ class EnvelopeSolver (object):
             # correct the estimate
             y_next = self._compute_y_next(y_cur, f_cur, t_next, H, y_extrap)
 
-        if self.estimate_T and np.abs(self.T - self.T_new) > self.dT_tol:
+        if self.estimate_T and np.abs(self.T - self.T_new) / self.T > self.dT_tol:
             return EnvelopeSolver.DT_TOO_LARGE
 
         if self.is_variational and self.compute_variational_LTE:

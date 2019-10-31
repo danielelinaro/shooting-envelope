@@ -16,8 +16,10 @@ def set_rc_defaults():
 class ColorFactory:
     RED = '\033[91m'
     GREEN = '\033[92m'
-    BLUE = '\033[94m'
     YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
     ENDC = '\033[0m'
     def __init__(self):
         pass
@@ -29,6 +31,10 @@ class ColorFactory:
         return self.__color__(self.GREEN, str)
     def blue(self, str):
         return self.__color__(self.BLUE, str)
+    def cyan(self, str):
+        return self.__color__(self.CYAN, str)
+    def magenta(self, str):
+        return self.__color__(self.MAGENTA, str)
     def yellow(self, str):
         return self.__color__(self.YELLOW, str)
 
