@@ -169,7 +169,7 @@ def envelope(imposed_paths):
     t_span = [0,200]
 
     be_env_solver = BEEnvelope(neuron, t_span, y0, T=None, T_guess=30, \
-                               vars_to_use=[0,1], dT_tol=0.15, \
+                               vars_to_use=[0,1], dT_tol=0.01, \
                                env_rtol=env_rtol, env_atol=env_atol, \
                                rtol=rtol, atol=atol)
     be_env_sol = be_env_solver.solve()
@@ -184,6 +184,11 @@ def envelope(imposed_paths):
 
     fig,(ax1,ax2) = plt.subplots(2, 1, sharex=True)
     ax1.plot(sol['t'], sol['y'][0], 'k', lw=0.75)
+    #####
+    for t0,y0,T in zip(be_env_sol['t'],be_env_sol['y'].T,be_env_sol['T']):
+        period = solve_ivp(neuron, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
+        ax1.plot(period['t'], period['y'][0], color=[1,.6,.6], lw=1)
+    #####
     ax1.plot(be_env_sol['t'], be_env_sol['y'][0], 'ro-', lw=1)
     ax1.plot(trap_env_sol['t'], trap_env_sol['y'][0], 'gs-', lw=1)
     ax1.set_ylabel(r'$V$ (mV)')

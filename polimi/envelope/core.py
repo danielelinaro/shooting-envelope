@@ -25,7 +25,8 @@ class EnvelopeSolver (object):
     LTE_TOO_LARGE = 2
     
 
-    def __init__(self, system, t_span, y0, T_guess=None, T=None, max_step=1000,
+    def __init__(self, system, t_span, y0, T_guess=None, T=None,
+                 max_step=1000, integer_steps=True,
                  dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
                  T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
@@ -37,8 +38,11 @@ class EnvelopeSolver (object):
         self.rtol, self.atol = env_rtol, env_atol
         # tolerance on the variation of the estimated period
         self.dT_tol = dT_tol
-        # max_step is in units of periods
-        self.max_step = np.floor(max_step)
+        # max_step is in units of periods (if integer_steps is true) or an absolute
+        # value (if integer_steps is false)
+        self.max_step = max_step
+        # whether the envelope should take steps that are integer multiples of the period
+        self.integer_steps = integer_steps
 
         self.solver = solver
         self.solver_kwargs = kwargs
@@ -174,14 +178,19 @@ class EnvelopeSolver (object):
                     color_fun = colors.magenta
                 H_str = color_fun('%.3e' % H)
                 N_str = color_fun('%4d' % N)
+                H_new_str = color_fun('%.3e' % self.H_new)
+                if self.integer_steps:
+                    N_new_str = color_fun('%4d' % (self.H_new / self.T))
+                else:
+                    N_new_str = color_fun('%7.2f' % (self.H_new / self.T))
                 t_cur_str = color_fun('%.4e' % t_cur)
                 msg = color_fun(msg)
                 if self.is_variational:
                     print('EnvelopeSolver.solve(%s)> T = %.3e, T_var = %.3e, H = %s, N = %s - %s' % \
                           (t_cur_str, self.T, self.T_var, H_str, N_str, msg))
                 else:
-                    print('EnvelopeSolver.solve(%s)> T = %.3e, H = %s, N = %s - %s' % \
-                          (t_cur_str, self.T, H_str, N_str, msg))
+                    print('EnvelopeSolver.solve(%s)> T = %.3e, H = %s, N = %s, H_new = %s, N_new = %s - %s' % \
+                          (t_cur_str, self.T, H_str, N_str, H_new_str, N_new_str, msg))
 
         idx, = np.where(self.t <= self.t_span[1] + self.T/2)
         sol = {'t': self.t[idx], 'y': self.y[:,idx],
@@ -465,12 +474,13 @@ class EnvelopeSolver (object):
 
 
 class BEEnvelope (EnvelopeSolver):
-    def __init__(self, fun, t_span, y0, T_guess=None, T=None, max_step=1000,
+    def __init__(self, fun, t_span, y0, T_guess=None, T=None,
+                 max_step=1000, integer_steps=True,
                  dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
                  T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
                  solver=solve_ivp, **kwargs):
-        super(BEEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
+        super(BEEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step, integer_steps,
                                          dT_tol, env_rtol, env_atol,
                                          vars_to_use, is_variational, T_var,
                                          T_var_guess, var_rtol, var_atol,
@@ -489,7 +499,9 @@ class BEEnvelope (EnvelopeSolver):
 
 
     def _compute_next_H(self, scale, coeff, T):
-        return np.min((self.max_step,np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
+        if self.integer_steps:
+            return np.min((self.max_step, np.floor(np.min(np.sqrt(2*scale/coeff)) / T))) * T
+        return np.min((self.max_step, np.min(np.sqrt(2*scale/coeff))))
 
 
     def _compute_variational_LTE(self, t_prev, t_cur, t_next, y_prev, y_cur, y_next):
@@ -506,12 +518,13 @@ class BEEnvelope (EnvelopeSolver):
 
 
 class TrapEnvelope (EnvelopeSolver):
-    def __init__(self, fun, t_span, y0, T_guess=None, T=None, max_step=1000,
+    def __init__(self, fun, t_span, y0, T_guess=None, T=None,
+                 max_step=1000, integer_steps=True,
                  dT_tol=1e-2, env_rtol=1e-3, env_atol=1e-6,
                  vars_to_use=[], is_variational=False, T_var=None,
                  T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
                  solver=solve_ivp, **kwargs):
-        super(TrapEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step,
+        super(TrapEnvelope, self).__init__(fun, t_span, y0, T_guess, T, max_step, integer_steps,
                                            dT_tol, env_rtol, env_atol,
                                            vars_to_use, is_variational, T_var,
                                            T_var_guess, var_rtol, var_atol,
@@ -544,7 +557,9 @@ class TrapEnvelope (EnvelopeSolver):
 
 
     def _compute_next_H(self, scale, coeff, T):
-        return np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
+        if self.integer_steps:
+            return np.min((self.max_step,np.floor(np.min((12*scale/coeff)**(1/3)) / T))) * T
+        return np.min((self.max_step, np.min((12*scale/coeff)**(1/3))))
 
 
     def _compute_variational_LTE(self, t_prev, t_cur, t_next, y_prev, y_cur, y_next):

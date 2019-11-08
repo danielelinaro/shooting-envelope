@@ -117,105 +117,6 @@ def autonomous():
     plt.show()
 
 
-def forced_polar():
-    from polimi import vdp_auto
-    epsilon = 1e-3
-    T_exact = 10
-    T_guess = 0.9 * T_exact
-    A = [5]
-    T = [T_exact]
-    rtol = {'fun': 1e-8, 'env': 1e-3}
-    atol = {'fun': 1e-10, 'env': 1e-6}
-
-    y0 = [2e-3,0]
-    for i in range(len(A)):
-        y0.append(1.)
-        y0.append(0.)
-    fun = lambda t,y: vdp_auto(t,y,epsilon,A,T)
-    method = 'RK45'
-
-    t0 = 0
-    ttran = 200
-    if ttran > 0:
-        print('Integrating the full system (transient)...')
-        tran = solve_ivp(fun, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        t0 = tran['t'][-1]
-        y0 = tran['y'][:,-1]
-        plt.plot(tran['t'],tran['y'][0],'k')
-        plt.plot(tran['t'],tran['y'][2],'r')
-        plt.show()
-
-    print('t0 =',t0)
-    print('y0 =',y0)
-
-    t_span = [t0,t0+2000]
-    be_solver = BEEnvelope(fun, t_span, y0, T_guess, rtol=rtol['env'], atol=atol['env'])
-    trap_solver = TrapEnvelope(fun, t_span, y0, T_guess, rtol=rtol['env'], atol=atol['env'])
-    sol_be = be_solver.solve()
-    sol_trap = trap_solver.solve()
-    sol = solve_ivp(fun, t_span, y0, method='BDF', rtol=1e-8, atol=1e-10)
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
-    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
-    plt.show()
-
-
-def forced():
-    from polimi import VanderPol
-
-    epsilon = 1e-3
-    T_exact = 10
-    T_guess = 0.9 * T_exact
-    A = [1,10]
-    #A = [10,1]
-    T = [T_exact,T_exact*100]
-    rtol = {'fun': 1e-8, 'env': 1e-1}
-    atol = {'fun': 1e-10, 'env': 1e-3}
-
-    y0 = [2e-3,0]
-    vdp = VanderPol(epsilon, A, T)
-    method = 'RK45'
-
-    t0 = 0
-    ttran = 1000
-    if ttran > 0:
-        print('Integrating the full system (transient)...')
-        tran = solve_ivp(vdp, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        t0 = tran['t'][-1]
-        y0 = tran['y'][:,-1]
-        plt.plot(tran['t'],tran['y'][0],'k')
-        plt.plot(tran['t'],tran['y'][1],'r')
-        plt.show()
-
-    print('t0 =',t0)
-    print('y0 =',y0)
-
-    t_span = [t0,t0+T[1]]
-    be_solver = BEEnvelope(vdp, t_span, y0, T=T_exact, \
-                           env_rtol=rtol['env'], env_atol=atol['env'], \
-                           rtol=rtol['fun'], atol=atol['fun'])
-    trap_solver = TrapEnvelope(vdp, t_span, y0, T=T_exact, \
-                               env_rtol=rtol['env'], env_atol=atol['env'], \
-                               rtol=rtol['fun'], atol=atol['fun'])
-    sol_be = be_solver.solve()
-    print('The number of integrated periods of the original system with BE is %d.' % be_solver.original_fun_period_eval)
-    sol_trap = trap_solver.solve()
-    print('The number of integrated periods of the original system with TRAP is %d.' % trap_solver.original_fun_period_eval)
-    sol = solve_ivp(vdp, t_span, y0, method='RK45', rtol=rtol['fun'], atol=atol['fun'])
-
-    #np.savetxt('vdp_forced_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-    #           pack(sol['t'],sol['y']), fmt='%.3e')
-    #np.savetxt('vdp_forced_envelope_BE_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-    #           pack(sol_be['t'],sol_be['y']), fmt='%.3e')
-    #np.savetxt('vdp_forced_envelope_trap_T=[{},{}]_A=[{},{}].txt'.format(T[0],T[1],A[0],A[1]), \
-    #           pack(sol_trap['t'],sol_trap['y']), fmt='%.3e')
-
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
-    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
-    plt.show()
-
-
 def HR():
     from polimi import HindmarshRose
     b = 3
@@ -223,6 +124,7 @@ def HR():
     hr = HindmarshRose(I,b)
 
     y0 = [0,1,0.1]
+    #y0 = np.array([-0.85477615, -3.03356705,  4.73029393])
     t_tran = 100
     sol = solve_ivp(hr, [0,t_tran], y0, method='RK45', rtol=1e-8, atol=1e-10)
     y0 = sol['y'][:,-1]
@@ -231,9 +133,11 @@ def HR():
     T_guess = 11
 
     be_solver = BEEnvelope(hr, t_span, y0, T_guess=T_guess, \
+                           max_step=500, integer_steps=False, \
                            env_rtol=1e-3, env_atol=1e-6, \
                            rtol=1e-8, atol=1e-10)
     trap_solver = TrapEnvelope(hr, t_span, y0, T_guess=T_guess, \
+                               max_steps=500, integer_steps=True, \
                                env_rtol=1e-3, env_atol=1e-6, \
                                rtol=1e-8, atol=1e-10)
 
@@ -244,169 +148,32 @@ def HR():
     print('-' * 81)
     sol = solve_ivp(hr, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
 
-    plt.plot(sol['t'],sol['y'][0],'k')
-    plt.plot(sol_be['t'],sol_be['y'][0],'ro-')
-    plt.plot(sol_trap['t'],sol_trap['y'][0],'go-')
-    plt.plot(sol_trap['t'],sol_trap['T'],'ms-')
-    plt.show()
+    fig,(ax1,ax2) = plt.subplots(1, 2, figsize=(10,6))
+    ax1.plot(sol['t'],sol['y'][0],'k')
+    for t0,y0,T in zip(sol_be['t'],sol_be['y'].T,sol_be['T']):
+        period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
+        ax1.plot(period['t'], period['y'][0], color=[1,.6,.6], lw=1)
+    for t0,y0,T in zip(sol_trap['t'],sol_trap['y'].T,sol_trap['T']):
+        period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
+        ax1.plot(period['t'], period['y'][0], color=[.6,1,.6], lw=1)
+    ax1.plot(sol_be['t'],sol_be['y'][0],'ro-')
+    ax1.plot(sol_trap['t'],sol_trap['y'][0],'go-')
+    ax1.plot(sol_be['t'],sol_be['T'],'ms-')
+    ax1.set_xlabel('t')
+    ax1.set_ylabel('y')
 
+    idx, = np.where(sol['t'] > 1000)
+    ax2.plot(sol['y'][0,idx],sol['y'][1,idx],'k')
+    for t0,y0,T in zip(sol_be['t'],sol_be['y'].T,sol_be['T']):
+        if t0 < 1000:
+            continue
+        period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
+        ax2.plot(period['y'][0], period['y'][1], color=[1,.6,.6], lw=1)
+    idx, = np.where(sol_be['t'] > 1000)
+    ax2.plot(sol_be['y'][0,idx],sol_be['y'][1,idx],'ro-')
+    ax2.set_xlabel('x')
+    ax2.set_ylabel('y')
 
-def autonomous_vdp():
-    from polimi import vdp, vdp_jac
-    from polimi.envelope import RK45Envelope, BDFEnvelope, _envelope_system, _one_period
-
-    epsilon = 0.001
-    A = [0.,0.]
-    T = [1.,1.]
-    y0 = [2e-3,0]
-    
-    rtol = {'fun': 1e-8, 'env': 1e-4}
-    atol = {'fun': 1e-10*np.ones(len(y0)), 'env': 1e-6}
-    T_exact = 2*np.pi
-    T_guess = 0.9 * T_exact
-
-    fun = lambda t,y: vdp(t,y,epsilon,A,T)
-    jac = lambda t,y: vdp_jac(t,y,epsilon)
-
-    method = 'RK45'
-    tend = 10000
-    print('Integrating the full system...')
-    if method == 'BDF':
-        full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, jac=jac, atol=atol['fun'], rtol=rtol['fun'])
-    else:
-        full = solve_ivp(fun, [0,tend+2*T_exact], y0, method, atol=atol['fun'], rtol=rtol['fun'])
-
-    env_fun_1 = lambda t,y: _envelope_system(t, y, fun, T_exact, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-    print('Integrating the first envelope function...')
-    var_step_1 = solve_ivp(env_fun_1, [0,tend], y0, method='BDF', atol=atol['env'], rtol=rtol['env'])
-
-    env_fun_2 = lambda t,y: _one_period(t, y, fun, T_guess, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-    print('Integrating the second envelope function...')
-    var_step_2 = solve_ivp(env_fun_2, [0,tend], y0, method='BDF', atol=atol['env'], rtol=rtol['env'])
-
-    print('Integrating the envelope with Runge-Kutta 4,5...')
-    rk = solve_ivp(fun, [0,tend], y0, method=RK45Envelope, T_guess=T_guess,
-                   rtol=rtol['env'], atol=atol['env'],
-                   fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
-
-    print('Integrating the envelope with BDF...')
-    bdf = solve_ivp(fun, [0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'],
-                    fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
-    
-    plt.figure()
-    plt.plot(full['t'],full['y'][0],'k',label='Full integration (%s)'%method)
-    plt.plot(var_step_1['t'],var_step_1['y'][0],'go-',lw=2,label='Var. step (fixed T)')
-    plt.plot(var_step_2['t'],var_step_2['y'][0],'ms-',lw=2,label='Var. step (estimated T)')
-    plt.plot(rk['t'],rk['y'][0],'r^-',lw=2,label='RK45')
-    for t0,y0 in zip(rk['t'],rk['y'].transpose()):
-        sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        plt.plot(sol['t'],sol['y'][0],'r')
-    plt.plot(bdf['t'],bdf['y'][0],'cv-',lw=2,label='BDF')
-    for t0,y0 in zip(bdf['t'],bdf['y'].transpose()):
-        sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        plt.plot(sol['t'],sol['y'][0],'c')
-    plt.xlabel('Time (s)')
-    plt.ylabel('x')
-    plt.legend(loc='best')
-    plt.show()
-
-
-def forced_vdp():
-    from polimi import vdp, vdp_jac, vdp_extrema, vdp_auto
-    from polimi.envelope import RK45Envelope, BDFEnvelope, _envelope_system, _one_period
-
-    epsilon = 0.001
-    T_exact = 10.
-    T_guess = 0.9 * T_exact
-    rtol = {'fun': 1e-8, 'env': 1e-3}
-    atol = {'fun': 1e-10, 'env': 1e-3}
-
-    polar_forcing = True
-    method = 'RK45'
-
-    T = [T_exact,1000.]
-    A = [1.,5]
-    #T = [T_exact]
-    #A = [10]
-
-    if not polar_forcing:
-        y0 = [2e-3,0]
-        fun = lambda t,y: vdp(t,y,epsilon,A,T)
-        jac = lambda t,y: vdp_jac(t,y,epsilon)
-        event_fun = lambda t,y: vdp_extrema(t,y,epsilon,A,T,0)
-        event_fun.direction = -1  # detect maxima (derivative goes from positive to negative)
-    else:
-        y0 = [2e-3,0]
-        for i in range(len(A)):
-            y0.append(1.)
-            y0.append(0.)
-        fun = lambda t,y: vdp_auto(t,y,epsilon,A,T)
-        method = 'RK45'
-
-    t0 = 0
-    ttran = 2000
-    if ttran > 0:
-        print('Integrating the full system (transient)...')
-        if method == 'BDF':
-            tran = solve_ivp(fun, [t0,ttran], y0, method='BDF', jac=jac, atol=atol['fun'],
-                             rtol=rtol['fun'], events=event_fun)
-        else:
-            tran = solve_ivp(fun, [t0,ttran], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        t0 = tran['t'][-1]
-        y0 = tran['y'][:,-1]
-        #plt.plot(tran['t'],tran['y'][0],'k')
-        #plt.plot(tran['t'],tran['y'][2],'r')
-        #plt.plot(tran['t'],tran['y'][4],'g')
-        #plt.show()
-
-    print('t0 =',t0)
-    print('y0 =',y0)
-
-    print('Integrating the full system...')
-    tend = 3000
-    if method == 'BDF':
-        full = solve_ivp(fun, [t0,tend], y0, method='BDF', jac=jac, atol=atol['fun'],
-                         rtol=rtol['fun'], events=event_fun, dense_output=True)
-    else:
-        full = solve_ivp(fun, [t0,tend], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-
-    env_fun = lambda t,y: _envelope_system(t, y, fun, T_exact, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-    print('Integrating the envelope at variable step...')
-    var_step = solve_ivp(env_fun, [t0,tend], y0, method='BDF', atol=atol['env'], rtol=rtol['env'])
-
-    print('Integrating the envelope with BDF...')
-    bdf = solve_ivp(fun, [t0,tend], y0, method=BDFEnvelope, T_guess=T_guess,
-                    rtol=rtol['env'], atol=atol['env'], dTtol=5e-3,
-                    fun_method='RK45', fun_rtol=rtol['fun'], fun_atol=atol['fun'])
-
-    plt.figure()
-    for i in range(2):
-        if i == 0:
-            ax = plt.subplot(2,1,i+1)
-        else:
-            plt.subplot(2,1,i+1,sharex=ax)
-
-        plt.plot(full['t'],full['y'][i],'k',label='Full integration (%s)'%method)
-        if method == 'BDF':
-            plt.plot(full['t_events'][0],full['sol'](full['t_events'][0])[i],'gx')
-
-        plt.plot(var_step['t'],var_step['y'][i],'go-',lw=2,label='Var. step (fixed T)')
-        #for t0,y0 in zip(var_step['t'],var_step['y'].transpose()):
-        #    sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-        #    plt.plot(sol['t'],sol['y'][i],'g')
-
-        plt.plot(bdf['t'],bdf['y'][i],'cv-',lw=2,label='BDF')
-        for t0,y0 in zip(bdf['t'],bdf['y'].transpose()):
-            sol = solve_ivp(fun, [t0,t0+T_exact], y0, method='RK45', atol=atol['fun'], rtol=rtol['fun'])
-            plt.plot(sol['t'],sol['y'][i],'c')
-
-        if i == 1:
-            plt.xlabel('Time (s)')
-            plt.ylabel('y')
-            plt.legend(loc='best')
-        else:
-            plt.ylabel('x')
     plt.show()
 
 
@@ -414,14 +181,8 @@ def main():
     import polimi.utils
     polimi.utils.set_rc_defaults()
 
-    # do not use the first two examples, they are old
-    #autonomous_vdp()
-    #forced_vdp()
-
     autonomous()
-    #forced_polar()
-    #forced()
-    #HR()
+    HR()
 
 
 if __name__ == '__main__':
