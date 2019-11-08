@@ -97,26 +97,28 @@ def system_var_R(use_ramp):
     R0 = 5
 
     t0 = 0
-    t_end = 2 / 50
+    t_end = 200*T
     t_span = np.array([t0, t_end])
 
     #y0 = np.array([9.3124, 1.2804])
-    #y0 = np.array([10.154335434351671, 1.623030961224813])
-    y0 = np.array([2*Vin,1])
+    y0 = np.array([10.154335434351671, 1.623030961224813])
 
     fun_rtol = 1e-12
     fun_atol = 1e-14
 
-    def R_fun(t):
-        #n_period = int(t / T)
-        #if n_period % 100 < 75:
-        #    return R0
-        #return R0/2
-        F = 50 # [Hz]
+    def R_fun_square(t):
+        n_period = int(t / T)
+        if n_period % 100 < 75:
+            return R0
+        return 2*R0
+
+    def R_fun_sin(t):
+        F = 500 # [Hz]
         dR0 = R0/10
         return R0 - dR0/2 + dR0*np.sin(2*np.pi*F*t)
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun, use_compensating_ramp=use_ramp)
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, \
+                  R=R_fun_square, use_compensating_ramp=use_ramp)
 
     print('Vector field index at the beginning of the integration: %d.' % boost.vector_field_index)
     sol = solve_ivp_switch(boost, t_span, y0, \
@@ -145,25 +147,27 @@ def envelope(use_ramp):
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
-    y0 = np.array([Vin,1])
-    t_tran = 50.1*T
+    y0 = np.array([Vin,0])
+    t_span = np.array([0, 500*T])
 
-    sol = solve_ivp_switch(boost, [0,t_tran], y0, \
-                           method='BDF', jac=boost.jac, \
-                           rtol=fun_rtol, atol=fun_atol)
-    #plt.plot(sol['t']*1e6,sol['y'][0],'k')
-    #plt.plot(sol['t']*1e6,sol['y'][1],'r')
-    #plt.show()
+    t_tran = 0.*T
+    if t_tran > 0:
+        sol = solve_ivp_switch(boost, [0,t_tran], y0, \
+                               method='BDF', jac=boost.jac, \
+                               rtol=fun_rtol, atol=fun_atol)
+        #plt.plot(sol['t']*1e6,sol['y'][0],'k')
+        #plt.plot(sol['t']*1e6,sol['y'][1],'r')
+        #plt.show()
+        t_span += sol['t'][-1]
+        y0 = sol['y'][:,-1]
 
-    t_span = sol['t'][-1] + np.array([0, 100*T])
-    y0 = sol['y'][:,-1]
     print('t_span =', t_span)
     print('y0 =', y0)
     print('index =', boost.vector_field_index)
 
     print('-' * 81)
     be_solver = BEEnvelope(boost, t_span, y0, max_step=1000, \
-                           T_guess=T*1.1, T=None, \
+                           T_guess=None, T=T, \
                            env_rtol=1e-2, env_atol=1e-3, \
                            solver=solve_ivp_switch, \
                            jac=boost.jac, method='BDF', \
@@ -215,7 +219,13 @@ def envelope_var_R(use_ramp):
             return R0
         return 2*R0
 
-    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, R=R_fun, use_compensating_ramp=use_ramp)
+    def R_fun_sin(t):
+        F = 500 # [Hz]
+        dR0 = R0/10
+        return R0 - dR0/2 + dR0*np.sin(2*np.pi*F*t)
+
+    boost = Boost(0, T=T, ki=ki, Vin=Vin, Vref=Vref, C=C0*30, L=L0*2, \
+                  R=R_fun_sin, use_compensating_ramp=use_ramp)
 
     t_tran = 100.1*T
 
@@ -236,7 +246,7 @@ def envelope_var_R(use_ramp):
     print('index =', boost.vector_field_index)
 
     print('-' * 81)
-    be_solver = BEEnvelope(boost, t_span, y0, max_step=10, \
+    be_solver = BEEnvelope(boost, t_span, y0, max_step=1000, \
                            T_guess=None, T=T, \
                            env_rtol=1e-2, env_atol=1e-3, \
                            solver=solve_ivp_switch, \
@@ -585,7 +595,7 @@ def shooting(use_ramp):
 
     y0_guess = np.array([Vin,0])
 
-    t_tran = 0*T
+    t_tran = 0.1*T
 
     if t_tran > 0:
         tran = solve_ivp_switch(boost, [0,t_tran], y0_guess, method='BDF', \
@@ -596,6 +606,7 @@ def shooting(use_ramp):
         ax2.plot(tran['t']/T,tran['y'][1],'k')
         ax2.set_xlabel('No. of periods')
         ax2.set_ylabel(r'$I_L$ (A)')
+        plt.show()
 
     T_large = 5*T
     T_small = T
