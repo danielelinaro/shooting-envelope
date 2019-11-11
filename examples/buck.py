@@ -144,11 +144,6 @@ def envelope():
     plt.show()
 
 
-
-def variational_envelope():
-    print('not implemented')
-
-
 def variational_integration():
     T = 50e-6
     Vref = 10
@@ -219,6 +214,97 @@ def variational_integration():
 
     plt.show()
     return v
+
+
+def variational_envelope():
+    T = 50e-6
+    Vref = 10
+    kp = 0.1
+    ki = 10
+    R = 6
+
+    y0 = np.array([0,0,0])
+
+    fun_rtol = 1e-10
+    fun_atol = 1e-12
+
+    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
+    N = buck.n_dim
+
+    t_tran = 50*T
+
+    if t_tran > 0:
+        y0 = np.array([Vin(0),1,0])
+        print('Vector field index at the beginning of the integration: %d.' % buck.vector_field_index)
+        sol = solve_ivp_switch(buck, [0,t_tran], y0, \
+                               method='BDF', jac=buck.jac, \
+                               rtol=fun_rtol, atol=fun_atol)
+        print('Vector field index at the end of the integration: %d.' % buck.vector_field_index)
+        fig,(ax1,ax2) = plt.subplots(2,1,sharex=True)
+        ax1.plot(sol['t']*1e6,sol['y'][0],'k')
+        ax1.set_ylabel(r'$V_C$ (V)')
+        ax2.plot(sol['t']*1e6,sol['y'][1],'r')
+        ax2.set_xlabel(r'Time ($\mu$s)')
+        ax2.set_ylabel(r'$I_L$ (A)')
+        plt.show()
+        y0 = sol['y'][:,-1]
+    else:
+        y0 = np.array([10.01785173, 1.79660146, 0.04963066])
+
+    print('y0 =', y0)
+    T_large = 1/100
+    T_small = T
+    buck.with_variational = True
+    buck.variational_T = T_large
+
+    t_span_var = [0,1]
+    y0_var = np.concatenate((y0,np.eye(len(y0)).flatten()))
+
+    sol = solve_ivp_switch(buck, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+
+    rtol = 1e-1
+    atol = 1e-2
+    be_var_solver = BEEnvelope(buck, [0,T_large], y0, T_guess=None, T=T_small, \
+                               env_rtol=rtol, env_atol=atol, max_step=10,
+                               is_variational=True, T_var_guess=None, T_var=None, \
+                               var_rtol=rtol, var_atol=atol, solver=solve_ivp_switch, \
+                               rtol=fun_rtol, atol=fun_atol, method='BDF')
+    trap_var_solver = TrapEnvelope(buck, [0,T_large], y0, T_guess=None, T=T_small, \
+                                   env_rtol=rtol, env_atol=atol, max_step=10,
+                                   is_variational=True, T_var_guess=None, T_var=None, \
+                                   var_rtol=rtol, var_atol=atol, solver=solve_ivp_switch, \
+                                   rtol=fun_rtol, atol=fun_atol, method='BDF')
+    print('-' * 100)
+    var_sol_be = be_var_solver.solve()
+    print('-' * 100)
+    var_sol_trap = trap_var_solver.solve()
+    print('-' * 100)
+
+    eig,_ = np.linalg.eig(np.reshape(sol['y'][N:,-1],(N,N)))
+    print('         correct eigenvalues:', eig)
+    eig,_ = np.linalg.eig(np.reshape(var_sol_be['y'][N:,-1],(N,N)))
+    print('  BE approximate eigenvalues:', eig)
+    eig,_ = np.linalg.eig(np.reshape(var_sol_trap['y'][N:,-1],(N,N)))
+    print('TRAP approximate eigenvalues:', eig)
+
+    labels = [r'$V_C$ (V)', r'$I_L$ (A)', r'$\int V_o$ $(\mathrm{V}\cdot\mathrm{s})$']
+    fig,ax = plt.subplots(3,4,sharex=True,figsize=(9,5))
+    for i in range(3):
+        ax[i,0].plot(sol['t'],sol['y'][i],'k',lw=1)
+        ax[i,0].plot(var_sol_be['t'],var_sol_be['y'][i],'rs-',ms=3)
+        ax[i,0].plot(var_sol_trap['t'],var_sol_trap['y'][i],'go-',ms=3)
+        ax[i,0].set_ylabel(labels[i])
+        ax[i,0].set_xlim([0,1])
+        for j in range(3):
+            k = i*3 + j
+            ax[i,j+1].plot(sol['t'],sol['y'][k+3],'k',lw=1,label='Python')
+            ax[i,j+1].plot(var_sol_be['t'],var_sol_be['y'][k+3],'rs',ms=3)
+            ax[i,j+1].plot(var_sol_trap['t'],var_sol_trap['y'][k+3],'go',ms=3)
+            ax[i,j+1].set_ylabel(r'$\Phi_{%d,%d}$' % (i+1,j+1))
+            ax[i,j+1].set_xlim([0,1])
+        ax[2,i].set_xlabel('Normalized time')
+
+    plt.show()
 
 
 def shooting(use_ramp):
