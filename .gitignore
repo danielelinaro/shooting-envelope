@@ -5,6 +5,7 @@ __pycache__
 *.pdf
 *.pptx
 *.m
+<<<<<<< HEAD
 *.ipynb
 *.pan
 *.va
@@ -14,3 +15,6 @@ __pycache__
 *.mat
 *.dat*
 *.ascii
+=======
+Newton.ipynb
+>>>>>>> origin/pan

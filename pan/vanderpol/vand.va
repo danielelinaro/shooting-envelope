@@ -1,0 +1,16 @@
+module VAND(x,y,u);
+inout x,y;
+input u;
+electrical x,y,u;
+
+parameter real EPS=1e-3 from (0:inf);
+parameter real IC=0;
+
+analog begin
+
+    i(y) <+ ddt(v(x),,,IC) - v(y) + v(u);
+    i(x) <+ ddt(v(y)) - (EPS*(1-v(x)*v(x))*v(y) - v(x));
+
+end
+
+endmodule
