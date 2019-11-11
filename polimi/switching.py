@@ -5,7 +5,7 @@ from scipy.integrate._ivp.ivp import OdeResult
 
 from .systems import DynamicalSystem
 
-__all__ = ['SwitchingSystem', 'Boost', 'solve_ivp_switch']
+__all__ = ['SwitchingSystem', 'Boost', 'Buck', 'solve_ivp_switch']
 
 
 class SwitchingSystem (DynamicalSystem):
@@ -123,7 +123,7 @@ class Boost (SwitchingSystem):
 
         self._make_matrixes()
 
-        self.event_functions = [lambda t,y: Boost.manifold(self, t, y),
+        self.event_functions = [lambda t,y: Boost.manifold(self, t*self.variational_T, y),
                                 lambda t,y: Boost.clock(self, t*self.variational_T, y)]
         for event_fun in self._event_functions:
             event_fun.direction = 1
@@ -184,6 +184,115 @@ class Boost (SwitchingSystem):
                   lambda t: np.array([ [-1/(self.R(t)*self.C), 1/self.C], [-1/self.L, -self.Rs/self.L] ])]
         self.B  = np.array([0, self.Vin/self.L])
 
+
+
+class Buck (SwitchingSystem):
+
+    def __init__(self, vector_field_index,
+                 T=50e-6, kp=0.1, ki=1000, F0=100,
+                 Vref=10, Vin=20, L=1e-3, C=20e-6,
+                 R=6, Rs=0.01, clock_phase=0,
+                 with_variational=False, variational_T=1):
+
+        if not with_variational:
+            if not variational_T is None and variational_T != 1:
+                print('with_variational is False, ignoring value of variational_T')
+            variational_T = 1
+
+        super(Buck, self).__init__(3, vector_field_index, with_variational, variational_T)
+
+        self.T = T
+        self.F = 1./T
+        self.phi = clock_phase
+        self.kp = kp
+        self.ki = ki
+        self.F0 = F0
+        self.Vref = Vref
+        if callable(Vin):
+            self.Vin = Vin
+        else:
+            self.Vin = lambda t: Vin
+        self.L = L
+        self.C = C
+        self.R = R
+        self.Rs = Rs
+
+        self.Vl = 1e-3
+        self.Vh = 1 - 1e-3
+
+        self._make_matrixes()
+
+        self.event_functions = [lambda t,y: Buck.manifold(self, t*self.variational_T, y),
+                                lambda t,y: Buck.clock(self, t*self.variational_T, y)]
+        for event_fun in self._event_functions:
+            event_fun.direction = 1
+            event_fun.terminal = 1
+
+        self.event_derivatives = [lambda t,y: Buck.manifold_der(self, t*self.variational_T, y),
+                                  lambda t,y: Buck.clock_der(self, t*self.variational_T, y)]
+
+        self.event_gradients = [lambda t,y: Buck.manifold_grad(self, t*self.variational_T, y), \
+                                lambda t,y: Buck.clock_grad(self, t*self.variational_T, y)]
+
+
+    def _fun(self, t, y):
+        return (self.A @ y) + self.B[self.vector_field_index](t)
+
+
+    def _J(self, t, y):
+        return self.A
+
+
+    def _handle_event(self, event_index, t, y):
+        self.vector_field_index = 1 - event_index
+
+
+    def clock(self, t, y):
+        return np.sin(2*np.pi*self.F*t-self.phi)
+
+
+    def clock_der(self, t, y):
+        return 2 * np.pi * self.F * np.cos(2*np.pi*self.F*t-self.phi)
+
+
+    def clock_grad(self, t, y):
+        return np.array([0 for _ in range(self.n_dim)], ndmin=2).transpose()
+
+
+    def manifold(self, t, y):
+        ramp = (t % self.T) / self.T
+        V_con = self.kp * (y[0] - self.Vref) + self.ki * y[2]
+        if V_con < self.Vl:
+            V_con = self.Vl
+        elif V_con > self.Vh:
+            V_con = self.Vh
+        return ramp - V_con
+
+
+    def manifold_der(self, t, y):
+        return self.F
+
+
+    def manifold_grad(self, t, y):
+        return np.array([-self.kp, 0, -self.ki], ndmin=2).transpose()
+
+
+    def _check_vector_field_index(self, index):
+        if index in (0,1):
+            return True
+        return False
+
+
+    def _make_matrixes(self):
+        self.A = np.array([
+            [-1/(self.R*self.C), 1/self.C, 0],
+            [-1/self.L, -self.Rs/self.L, 0],
+            [1, 0, 0]
+        ])
+        self.B  = [
+            lambda t: np.array([0, 0, -self.Vref]),
+            lambda t: np.array([0, self.Vin(t)/self.L, -self.Vref])
+        ]
 
 
 def solve_ivp_switch(sys, t_span, y0, **kwargs):
