@@ -307,27 +307,26 @@ def variational_envelope():
     plt.show()
 
 
-def shooting(use_ramp):
+def shooting():
     T = 50e-6
     Vref = 10
     kp = 0.1
     ki = 10
     R = 6
 
-    y0 = np.array([0,0,0])
-
     fun_rtol = 1e-10
     fun_atol = 1e-12
 
     buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
+    N = buck.n_dim
 
-    y0_guess = np.array([Vin,1,0])
+    y0_guess = np.array([Vin(0),1,0])
 
-    t_tran = 50*T
+    t_tran = 10*T
 
     if t_tran > 0:
-        tran = solve_ivp_switch(boost, [0,t_tran], y0_guess, method='BDF', \
-                                jac=boost.jac, rtol=fun_rtol, atol=fun_atol)
+        tran = solve_ivp_switch(buck, [0,t_tran], y0_guess, method='BDF', \
+                                jac=buck.jac, rtol=fun_rtol, atol=fun_atol)
         fig,(ax1,ax2) = plt.subplots(2,1,sharex=True)
         ax1.plot(tran['t']/T,tran['y'][0],'k')
         ax1.set_ylabel(r'$V_C$ (V)')
@@ -344,6 +343,7 @@ def shooting(use_ramp):
     shoot = EnvelopeShooting(buck, T_large, estimate_T, T_small, \
                              tol=1e-3, env_solver=TrapEnvelope, \
                              env_rtol=1e-2, env_atol=1e-3, \
+                             env_max_step=10, \
                              var_rtol=1e-1, var_atol=1e-2, \
                              fun_solver=solve_ivp_switch, \
                              rtol=fun_rtol, atol=fun_atol, \
@@ -357,28 +357,23 @@ def shooting(use_ramp):
 
     col = 'krgbcmy'
     lw = 0.8
-    fig,ax = plt.subplots(3,2,sharex=True,figsize=(12,7))
+    fig,ax = plt.subplots(3,1,sharex=True,figsize=(6,6))
 
     for i,integr in enumerate(sol_shoot['integrations']):
 
-        y0 = integr['y'][:2,0]
-        y0_var = np.concatenate((y0,np.eye(2).flatten()))
+        y0 = integr['y'][:N,0]
+        y0_var = np.concatenate((y0,np.eye(N).flatten()))
         sol = solve_ivp_switch(buck, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
 
-        for j in range(2):
-            ax[0,j].plot(sol['t'],sol['y'][j],col[i],lw=lw,label='Iter #%d' % (i+1))
-            ax[0,j].plot(integr['t'],integr['y'][j],col[i]+'o-',lw=1,ms=3)
-            for k in range(2):
-                n = j*2 + k
-                ax[j+1,k].plot(sol['t'],sol['y'][n+2],col[i],lw=lw)
-                ax[j+1,k].plot(integr['t'],integr['y'][n+2],col[i]+'o-',lw=1,ms=3)
-                ax[j+1,k].set_ylabel(r'$\Phi_{%d,%d}$' % (j+1,k+1))
-                ax[j+1,k].set_xlim([0,1])
-            ax[2,j].set_xlabel('Normalized time')
-    ax[0,0].legend(loc='best')
-    ax[0,0].set_ylabel(r'$V_C$ (V)')
-    ax[0,1].set_ylabel(r'$I_L$ (A)')
-    plt.savefig('boost_shooting.pdf')
+        for j in range(3):
+            ax[j].plot(sol['t'],sol['y'][j],col[i],lw=lw,label='Iter #%d' % (i+1))
+            ax[j].plot(integr['t'],integr['y'][j],col[i]+'o-',lw=1,ms=3)
+    ax[2].set_xlabel('Normalized time')
+    ax[0].legend(loc='best')
+    ax[0].set_ylabel(r'$V_C$ (V)')
+    ax[1].set_ylabel(r'$I_L$ (A)')
+    ax[2].set_ylabel(r'$\int V_o$ $(\mathrm{V}\cdot\mathrm{s})$')
+    plt.savefig('buck_shooting.pdf')
     plt.show()
 
 
@@ -394,12 +389,12 @@ cmds = {'system': system, \
         'eig': eig_comparison, \
         'variational-integration': variational_integration}
 
-cmd_descriptions = {'system': 'integrate the boost dynamical system', \
-                    'envelope': 'compute the envelope of the boost', \
-                    'variational-envelope': 'compute the envelope of the boost with variational part', \
-                    'shooting': 'perform a shooting analysis of the boost', \
+cmd_descriptions = {'system': 'integrate the buck converter', \
+                    'envelope': 'compute the envelope of the buck converter', \
+                    'variational-envelope': 'compute the envelope of the buck converter with variational part', \
+                    'shooting': 'perform a shooting analysis of the buck converter', \
                     'eig': 'compare eigenvalues obtained with full and envelope variational systems', \
-                    'variational-integration': 'integrate the boost and its variational part'}
+                    'variational-integration': 'integrate the buck converter and its variational part'}
 
 
 def list_commands():

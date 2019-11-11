@@ -89,7 +89,7 @@ class Shooting (BaseShooting):
 class EnvelopeShooting (BaseShooting):
 
     def __init__(self, system, T, estimate_T, small_T, \
-                 tol=1e-3, env_rtol=1e-1, env_atol=1e-3, \
+                 tol=1e-3, env_rtol=1e-1, env_atol=1e-3, env_max_step=1000, \
                  T_var=None, T_var_guess=None, \
                  var_rtol=1e-1, var_atol=1e-2, \
                  env_solver=envelope.TrapEnvelope,
@@ -100,6 +100,7 @@ class EnvelopeShooting (BaseShooting):
         self.T_var = T_var
         self.T_var_guess = T_var_guess
         self.env_rtol,self.env_atol = env_rtol,env_atol
+        self.env_max_step = env_max_step
         self.var_rtol,self.var_atol = var_rtol,var_atol
         self.env_solver = env_solver
         self.fun_solver = fun_solver
@@ -110,7 +111,7 @@ class EnvelopeShooting (BaseShooting):
         with_variational = self.system.with_variational
         self.system.with_variational = True
         solver = self.env_solver(self.system, [0,self.T_large], y0[:self.system.n_dim], \
-                                 T_guess=None, T=self.T_small, \
+                                 T_guess=None, T=self.T_small, max_step=self.env_max_step, \
                                  env_rtol=self.env_rtol, env_atol=self.env_atol, \
                                  is_variational=True, T_var_guess=self.T_var_guess, \
                                  T_var=self.T_var, var_rtol=self.var_rtol, \
