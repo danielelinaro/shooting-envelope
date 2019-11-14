@@ -186,8 +186,8 @@ class EnvelopeSolver (object):
                 t_cur_str = color_fun('%.4e' % t_cur)
                 msg = color_fun(msg)
                 if self.is_variational:
-                    print('EnvelopeSolver.solve(%s)> T = %.3e, T_var = %.3e, H = %s, N = %s - %s' % \
-                          (t_cur_str, self.T, self.T_var, H_str, N_str, msg))
+                    print('EnvelopeSolver.solve(%s)> T = %.3e, T_var = %.3e, H = %s, N = %s, H_new = %s, N_new = %s - %s' % \
+                          (t_cur_str, self.T, self.T_var, H_str, N_str, H_new_str, N_new_str, msg))
                 else:
                     print('EnvelopeSolver.solve(%s)> T = %.3e, H = %s, N = %s, H_new = %s, N_new = %s - %s' % \
                           (t_cur_str, self.T, H_str, N_str, H_new_str, N_new_str, msg))
