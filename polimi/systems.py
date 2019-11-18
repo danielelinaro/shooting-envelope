@@ -331,6 +331,137 @@ class Neuron4 (Neuron7):
         return np.array([vdot, ndot, cadot, nadot])
 
 
+class ASK_OOK (DynamicalSystem):
+
+    def __init__(self, with_variational=False, variational_T=1, **kwargs):
+        super(ASK_OOK, self).__init__(8, with_variational, variational_T)
+
+        self._set_default_pars(**kwargs)
+
+        for name,value in self.default_pars.items():
+            try:
+                setattr(self, name, kwargs[name])
+            except:
+                setattr(self, name, value)
+
+        for name,value in kwargs.items():
+            if not name in self.default_pars:
+                print('parameter "{}" not among defaults.'.format(name))
+                setattr(self, name, value)
+
+
+        self._Vg1 = lambda t: self._square_wave(t, self.T1, self.DC1, 0, self.VDD)
+        self._Vg2 = lambda t: self._square_wave(t, self.T2, self.DC2, 0, self.VDD)
+
+
+    def _set_default_pars(self, **kwargs):
+        F1 = 1e6
+        F2 = 2e9
+        CR = 1e-15
+        LR = 1 / (CR*(2*np.pi*F2)**2)
+        self.default_pars = {'VDD': 1.8, 'Rd1': 10, 'Cm1': 100e-15, 'L1': 20e-9,
+                             'C1': 0.5e-9, 'L2': 20e-9, 'Rd2': 10, 'Cm2': 100e-15,
+                             'C2': 1e-9, 'Ctl': CR, 'Ltl': LR, 'Rl': 300, 'F1': F1,
+                             'F2': F2, 'alpha': 1, 'beta': 0.025, 'KT': 2, 'VT': 1,
+                             'T1': 1/F1, 'T2': 1/F2, 'DC1': 0.1, 'DC2': 0.5,
+                             'IS': 1e-6, 'eta': 2, 'VTemp': 0.026}
+
+
+    def _I_mos(self, Vgs, Vds):
+        v = self.KT * (Vgs - self.VT)
+        return 0.5 * self.beta * (v + np.log(np.exp(v) + np.exp(-v))) * np.tanh(self.alpha * Vds)
+
+
+    def _I_diode(self, Vd):
+        return 0
+        return self.IS * (np.exp(Vd/(self.eta * self.VTemp)) - 1)
+
+
+    def _square_wave(self, t, T, dc, Vl, Vh):
+        norm_t = (t % T) / T
+        if norm_t < dc:
+            return Vh
+        return Vl
+
+
+    def _fun(self, t, y):
+        # state variables
+        ILtl = y[0]
+        IL1  = y[1]
+        IL2  = y[2]
+        out  = y[3] # VCtl
+        l20  = y[4]
+        l30  = y[5]
+        d10  = y[6] # VDD - VCm1
+        d20  = y[7] # VCm2
+
+        # MOS currents
+        IM1 = self._I_mos(self._Vg1(t), self.VDD - d10)
+        IM2 = self._I_mos(self._Vg2(t), d20)
+
+        # diode current
+        ID1 = self._I_diode(d10 - self.VDD)
+
+        # derivatives
+        y_dot = np.zeros(self.n_dim)
+        y_dot[0] = out / self.Ltl
+        y_dot[1] = (d10 - l20 - IL1*self.Rd1) / self.L1
+        y_dot[2] = (l20 - l30) / self.L2
+        y_dot[3] = (-out * self.Rd2 + (d20 - l30 + IL2*self.Rd2 - ILtl*self.Rd2) * self.Rl) / \
+                   (self.Ctl * self.Rd2 * self.Rl)
+        y_dot[4] = (IL1 - IL2) / self.C1
+        y_dot[5] = (-self.C2 * out * self.Rd2 + ((self.C2 + self.Ctl)*(d20 - l30) + \
+                                                 (self.C2 + self.Ctl) * IL2 * self.Rd2 - self.C2 * ILtl * self.Rd2) * \
+                    self.Rl) / (self.C2 * self.Ctl * self.Rd2 * self.Rl)
+        y_dot[6] = - (ID1 + IL1 - IM1) / self.Cm1
+        y_dot[7] = - (d20 - l30 + IM2 * self.Rd2) / (self.Cm2 * self.Rd2)
+
+        #print('{:11.4e} {:11.4e} {:7.3f} {:7.3f}'.format(IM1,IM2,VCm1-self.VDD,VCm2))
+        #print(('{:11.4e} '*8).format(ILtl,IL1,IL2,VCtl,VC1,VC2,VCm1,VCm2))
+        #print(('{:11.4e} '*8).format(y_dot[0],y_dot[1],y_dot[2],y_dot[3],y_dot[4],y_dot[5],y_dot[6],y_dot[7]))
+        #import ipdb
+        #ipdb.set_trace()
+
+        return y_dot
+
+
+    def _J(self, t, y):
+        return np.zeros((self.n_dim,self.n_dim))
+
+
+
+def ask_ook_test():
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.integrate import solve_ivp
+
+    oscillator = ASK_OOK()
+
+    tend = 1e-9
+    y0 = np.array([
+        0,    # ILtl
+        0,    # IL1
+        0,    # IL2
+        0,    # out = VCtl
+        0,    # l20 = VC1
+        0,    # l30 = VCtl + VC2
+        oscillator.VDD,  # d10 = VDD - VCm1
+        0     # d20 = VCm2
+    ])
+
+    atol = 1e-6
+    rtol = 1e-8
+
+    sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
+
+    fig,(ax1,ax2) = plt.subplots(1,2,sharex=True)
+    ax1.plot(sol['t']*1e9, sol['y'][3], 'k', lw=1, label='V_out')
+    ax2.plot(sol['t']*1e9, sol['y'][6]-oscillator.VDD, 'k', lw=1, label='V_d10')
+    ax1.set_xlabel('Time (ns)')
+    ax2.set_xlabel('Time (ns)')
+    ax1.set_ylabel('Voltage (V)')
+    plt.show()
+
 
 def hr_test():
     import numpy as np
@@ -354,4 +485,5 @@ def hr_test():
 
 
 if __name__ == '__main__':
-    hr_test()
+    #hr_test()
+    ask_ook_test()
