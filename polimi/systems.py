@@ -1,5 +1,5 @@
 
-__all__ = ['DynamicalSystem', 'VanderPol', 'HindmarshRose', 'Neuron7', 'Neuron4']
+__all__ = ['DynamicalSystem', 'VanderPol', 'HindmarshRose', 'Neuron7', 'Neuron4', 'ASK_OOK']
 
 import numpy as np
 
@@ -415,69 +415,6 @@ class ASK_OOK (DynamicalSystem):
         return y_dot
 
 
-def ask_ook_test():
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from scipy.integrate import solve_ivp
-    from scipy.optimize import fsolve
-
-    oscillator = ASK_OOK()
-
-    y0_correct = np.array([
-        0.,          # ILtl
-        0.000162828, # IL1
-        0.000162828, # IL2
-        0,           # out
-        0.904516,    # l20
-        0.904516,    # l30
-        0.906144,    # d10
-        0.902887     # d20
-    ])
-    y0_guess = np.array([
-        0.,      # ILtl
-        0.0001,  # IL1
-        0.00005, # IL2
-        0,       # out
-        0.8,     # l20
-        0.8,     # l30
-        0.8,     # d10
-        0.8      # d20
-    ])
-
-    y0 = fsolve(lambda y: oscillator._fun(0,y), y0_guess)
-    print('(FULL CIRCUIT) Initial condition:')
-    print('{:>10s} {:>13s} {:>13s}'.format('Variable','Computed','PAN'))
-    var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
-    for var,py,pan in zip(var_names,y0,y0_correct):
-        print('{:>10s} = {:13.5e} {:13.5e}'.format(var,py,pan))
-
-    tend = 5 * oscillator.T2
-
-    atol = 1e-6
-    rtol = 1e-8
-
-    sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
-
-    fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,figsize=(10,4))
-    ax1.plot(sol['t']*1e9, sol['y'][0], 'k', lw=1, label='i(Ltl)')
-    ax1.plot(sol['t']*1e9, sol['y'][1], 'r', lw=1, label='i(L1)')
-    ax1.plot(sol['t']*1e9, sol['y'][2], 'g', lw=1, label='i(L2)')
-    ax1.set_xlabel('Time (ns)')
-    ax1.set_ylabel('Current (A)')
-    ax1.legend(loc='best')
-
-    ax2.plot(sol['t']*1e9, sol['y'][3], 'k', lw=1, label='v(out)')
-    ax2.plot(sol['t']*1e9, sol['y'][4], 'r', lw=1, label='v(l20)')
-    ax2.plot(sol['t']*1e9, sol['y'][5], 'g', lw=1, label='v(l30)')
-    ax2.plot(sol['t']*1e9, sol['y'][6], 'b', lw=1, label='v(d10)')
-    ax2.plot(sol['t']*1e9, sol['y'][7], 'c', lw=1, label='v(d20)')
-    ax2.set_xlabel('Time (ns)')
-    ax2.set_ylabel('Voltage (V)')
-    ax2.legend(loc='best')
-
-    plt.show()
-
-
 class ASK_OOK_lower (ASK_OOK):
 
     def __init__(self, with_variational=False, variational_T=1, **kwargs):
@@ -503,6 +440,30 @@ class ASK_OOK_lower (ASK_OOK):
                                                  IL2 * self.Rd2 - self.C2 * ILtl * self.Rd2) * self.Rl) / \
                                                  (self.C2 * self.Ctl * self.Rd2 * self.Rl)
         y_dot[4] = - (d20 - l30 + self._I_mos(self._Vg2(t),d20) * self.Rd2) / (self.Cm2 * self.Rd2)
+
+        return y_dot
+
+
+class ASK_OOK_upper (ASK_OOK):
+
+    def __init__(self, with_variational=False, variational_T=1, **kwargs):
+        super(ASK_OOK_upper, self).__init__(with_variational, variational_T)
+        self.n_dim = 2
+
+
+    def _fun(self, t, y):
+        # state variables
+        IL1 = y[0]
+        d10  = y[1]
+
+        # derivatives
+        y_dot = np.zeros(self.n_dim)
+        y_dot[0] = (d10 - self.Rd1 * IL1) / self.L1
+        y_dot[1] = - (self._I_diode(d10 - self.VDD) + IL1 - self._I_mos(self._Vg1(t), self.VDD - d10)) / self.Cm1
+        #print('{:12.4e} {:12.4e}'.format(t, self._Vg1(t)))
+        #if self._Vg1(t) > 1.5:
+        #    import ipdb
+        #    ipdb.set_trace()
 
         return y_dot
 
@@ -544,33 +505,20 @@ def ask_ook_lower_test():
     sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
 
     fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,figsize=(10,4))
-    ax1.plot(sol['t']*1e9, sol['y'][0]*1e6, 'k', lw=1, label='i(Ltl)')
-    ax2.plot(sol['t']*1e9, sol['y'][2], 'k', lw=1, label='v(out)')
+    ax1.plot(sol['t']*1e9, sol['y'][0], 'k', lw=1, label='i(Ltl)')
+    ax1.plot(sol['t']*1e9, sol['y'][1], 'r', lw=1, label='i(L2)')
     ax1.set_xlabel('Time (ns)')
-    ax1.set_ylabel('i(Ltl) (uA)')
+    ax1.set_ylabel('Current (A)')
+    ax1.legend(loc='best')
+
+    ax2.plot(sol['t']*1e9, sol['y'][2], 'k', lw=1, label='v(out)')
+    ax2.plot(sol['t']*1e9, sol['y'][3], 'r', lw=1, label='v(l30)')
+    ax2.plot(sol['t']*1e9, sol['y'][4], 'g', lw=1, label='v(d20)')
     ax2.set_xlabel('Time (ns)')
-    ax2.set_ylabel('v(out) (V)')
+    ax2.set_ylabel('Voltage (V)')
+    ax2.legend(loc='best')
+
     plt.show()
-
-
-class ASK_OOK_upper (ASK_OOK):
-
-    def __init__(self, with_variational=False, variational_T=1, **kwargs):
-        super(ASK_OOK_upper, self).__init__(with_variational, variational_T)
-        self.n_dim = 2
-
-
-    def _fun(self, t, y):
-        # state variables
-        IL1 = y[0]
-        d10  = y[1]
-
-        # derivatives
-        y_dot = np.zeros(self.n_dim)
-        y_dot[0] = (d10 - self.Rd1 * IL1) / self.L1
-        y_dot[1] = - (self._I_diode(d10 - self.VDD) + IL1 - self._I_mos(self._Vg1(t), self.VDD - d10)) / self.Cm1
-
-        return y_dot
 
 
 def ask_ook_upper_test():
@@ -601,7 +549,7 @@ def ask_ook_upper_test():
     atol = 1e-10
     rtol = 1e-12
 
-    sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
+    sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol, max_step=oscillator.T2)
 
     fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,figsize=(10,4))
     ax1.plot(sol['t']*1e9, sol['y'][0]*1e3, 'k', lw=1, label='i(L1)')
@@ -635,8 +583,7 @@ def hr_test():
 
 
 if __name__ == '__main__':
-    #hr_test()
-    ask_ook_lower_test()
-    ask_ook_upper_test()
-    ask_ook_test()
+    hr_test()
+    #ask_ook_lower_test()
+    #ask_ook_upper_test()
     
