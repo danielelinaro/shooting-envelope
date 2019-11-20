@@ -364,6 +364,29 @@ class ASK_OOK (DynamicalSystem):
         self._Vg1 = lambda t: square_wave(t, self.VDD, self.T1, self.DC1, 10e-9, 10e-9)
         self._Vg2 = lambda t: square_wave(t, self.VDD, self.T2, self.DC2, 10e-12, 10e-12)
 
+        # Jacobian matrix
+        JAC = np.zeros((self.n_dim,self.n_dim))
+        JAC[0,3] =   1 / self.Ltl
+        JAC[1,1] = - self.Rd1 / self.L1
+        JAC[1,4] = - 1 / self.L1
+        JAC[1,6] =   1 / self.L1
+        JAC[2,4] =   1 / self.L2
+        JAC[2,5] = - 1 / self.L2
+        JAC[3,0] = - 1 / self.Ctl
+        JAC[3,2] =   1 / self.Ctl
+        JAC[3,3] = - 1 / (self.Ctl * self.Rl)
+        JAC[3,5] = - 1 / (self.Ctl * self.Rd2)
+        JAC[3,7] =   1 / (self.Ctl * self.Rd2)
+        JAC[4,1] =   1 / self.C1
+        JAC[4,2] = - 1 / self.C1
+        JAC[5,0] = - 1 / self.Ctl
+        JAC[5,2] =   1 / self.C2 + 1 / self.Ctl
+        JAC[5,3] = - 1 / (self.Ctl * self.Rl)
+        JAC[5,5] = - (self.C2 + self.Ctl) / (self.C2 * self.Ctl * self.Rd2)
+        JAC[5,7] =   (self.C2 + self.Ctl) / (self.C2 * self.Ctl * self.Rd2)
+        JAC[6,1] = - 1 / self.Cm1
+        JAC[7,5] = 1 / (self.Cm2 * self.Rd2)
+        self.JAC = JAC
 
     def _set_default_pars(self, **kwargs):
         F1 = 1e6
@@ -413,6 +436,25 @@ class ASK_OOK (DynamicalSystem):
         y_dot[7] = - (d20 - l30 + self._I_mos(self._Vg2(t), d20) * self.Rd2) / (self.Cm2 * self.Rd2)
 
         return y_dot
+
+
+    def _J(self, t, y):
+        # state variables
+        d10  = y[6]
+        d20  = y[7]
+
+        sech = lambda x: 1 / np.cosh(x)
+
+        # Jacobian matrix
+        jac = self.JAC.copy()
+        jac[6,6] = (- np.exp((d10 - self.VDD)/(self.VTemp * self.eta)) * self.IS / (self.VTemp * self.eta) - \
+                    0.5 * self.alpha * self.beta * (self.KT * (self._Vg1(t) - self.VT) + \
+                    np.log(np.exp(-self.KT * (self._Vg1(t)-self.VT)) + np.exp(self.KT * (self._Vg1(t) - self.VT)))) * \
+                    (sech((self.VDD - d10) * self.alpha)**2)) / self.Cm1
+        jac[7,7] = (-1 / self.Rd2 - 0.5 * self.alpha * self.beta * (self.KT * (self._Vg2(t) - self.VT) +
+                    np.log(np.exp(-self.KT * (self._Vg2(t) - self.VT)) + np.exp(self.KT * (self._Vg2(t) - self.VT)))) *
+                    (sech(self.alpha * d20)**2)) / self.Cm2
+        return jac
 
 
 class ASK_OOK_lower (ASK_OOK):

@@ -52,26 +52,141 @@ def system():
     for var,py,pan in zip(var_names,y0,y0_correct):
         print('{:>10s} = {:13.5e} {:13.5e}'.format(var,py,pan))
 
-    tend = 5 * oscillator.T2
+    tend = 100 * oscillator.T2
 
     atol = 1e-6
     rtol = 1e-8
 
-    sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
+    comparison = False
+    if comparison:
+        elapsed = {}
+        sys.stdout.write('Integrating using RK45... ')
+        sys.stdout.flush()
+        start = time.time()
+        sol = solve_ivp(oscillator, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
+        elapsed['RK45'] = time.time() - start
+        sys.stdout.write('done.')
+        sys.stdout.write('Integrating using BDF... ')
+        sys.stdout.flush()
+        start = time.time()
+        sol = solve_ivp(oscillator, [0,tend], y0, method='BDF', jac=oscillator._J, atol=atol, rtol=rtol)
+        elapsed['BDF'] = time.time() - start
+        sys.stdout.write('done.')
+        print('Elapsed times:')
+        for k,v in elapsed.items():
+            print('   {:>5s}: {:6.2f} sec.'.format(k,v))
+    else:
+        sol = solve_ivp(oscillator, [0,tend], y0, method='BDF', jac=oscillator._J, atol=atol, rtol=rtol)
 
     fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,figsize=(10,4))
-    ax1.plot(sol['t']*1e9, sol['y'][0], 'k', lw=1, label='i(Ltl)')
-    ax1.plot(sol['t']*1e9, sol['y'][1], 'r', lw=1, label='i(L1)')
-    ax1.plot(sol['t']*1e9, sol['y'][2], 'g', lw=1, label='i(L2)')
+    labels = ['i(Ltl)', 'i(L1)', 'i(L2)', \
+              'v(out)', 'v(l20)', 'v(l30)', 'v(d10)', 'v(d20)']
+    colors = 'krgb'
+    for i in range(3):
+        ax1.plot(sol['t']*1e9, sol['y'][i], colors[i], lw=1, label=labels[i])
     ax1.set_xlabel('Time (ns)')
     ax1.set_ylabel('Current (A)')
     ax1.legend(loc='best')
+    for i in range(4):
+        ax2.plot(sol['t']*1e9, sol['y'][i+3], colors[i], lw=1, label=labels[i+3])
+    ax2.set_xlabel('Time (ns)')
+    ax2.set_ylabel('Voltage (V)')
+    ax2.legend(loc='best')
 
-    ax2.plot(sol['t']*1e9, sol['y'][3], 'k', lw=1, label='v(out)')
-    ax2.plot(sol['t']*1e9, sol['y'][4], 'r', lw=1, label='v(l20)')
-    ax2.plot(sol['t']*1e9, sol['y'][5], 'g', lw=1, label='v(l30)')
-    ax2.plot(sol['t']*1e9, sol['y'][6], 'b', lw=1, label='v(d10)')
-    ax2.plot(sol['t']*1e9, sol['y'][7], 'c', lw=1, label='v(d20)')
+    plt.show()
+
+
+def envelope():
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.integrate import solve_ivp
+    from scipy.optimize import fsolve
+
+    oscillator = ASK_OOK()
+
+    y0_guess = np.array([
+        0.,      # ILtl
+        0.0001,  # IL1
+        0.00005, # IL2
+        0,       # out
+        0.8,     # l20
+        0.8,     # l30
+        0.8,     # d10
+        0.8      # d20
+    ])
+    vars_to_use = [2, 3, 5, 7]
+
+    y0 = fsolve(lambda y: oscillator._fun(0,y), y0_guess)
+    print('Initial condition for transient analysis:')
+    print('{:>10s} {:>13s}'.format('Variable','Value'))
+    var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
+    for var,ic in zip(var_names,y0):
+        print('{:>10s} = {:13.5e}'.format(var,ic))
+
+    t_tran = 100 * oscillator.T2
+
+    fun_atol = 1e-10
+    fun_rtol = 1e-12
+
+    sol = solve_ivp(oscillator, [0,t_tran], y0, method='BDF', \
+                    jac=oscillator.jac, atol=fun_atol, rtol=fun_rtol)
+    y0 = sol['y'][:,-1]
+
+    fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,figsize=(10,4))
+    labels = ['i(Ltl)', 'i(L1)', 'i(L2)', \
+              'v(out)', 'v(l20)', 'v(l30)', 'v(d10)', 'v(d20)']
+    colors = 'rgbk'
+    for i in range(1):
+        ax1.plot(sol['t']*1e9, sol['y'][i], colors[i], lw=1, label=labels[i] + ' tran')
+    for i in range(1):
+        ax2.plot(sol['t']*1e9, sol['y'][i+3], colors[i], lw=1, label=labels[i+3] + ' tran')
+
+    print('Initial condition for envelope analysis:')
+    print('{:>10s} {:>13s}'.format('Variable','Value'))
+    for var,ic in zip(var_names,y0):
+        print('{:>10s} = {:13.5e}'.format(var,ic))
+
+    t_span = t_tran + np.array([0, 50 * oscillator.T2])
+    print('-' * 81)
+    be_solver = BEEnvelope(oscillator, t_span, y0, max_step=10, \
+                           T_guess=None, T=oscillator.T2, vars_to_use=vars_to_use, \
+                           env_rtol=1e-1, env_atol=1e-2, \
+                           solver=solve_ivp, \
+                           jac=oscillator.jac, method='BDF', \
+                           rtol=fun_rtol, atol=fun_atol)
+    #sol_be = be_solver.solve()
+    print('-' * 81)
+    trap_solver = TrapEnvelope(oscillator, t_span, y0, max_step=20, \
+                               T_guess=None, T=oscillator.T2, vars_to_use=vars_to_use, \
+                               env_rtol=1e-1, env_atol=1e-2, \
+                               solver=solve_ivp, \
+                               jac=oscillator.jac, method='BDF', \
+                               rtol=fun_rtol, atol=fun_atol)
+    sol_trap = trap_solver.solve()
+    print('-' * 81)
+
+    sys.stdout.write('Integrating the original system... ')
+    sys.stdout.flush()
+    sol = solve_ivp(oscillator, t_span, y0, method='BDF',
+                    jac=oscillator.jac, rtol=fun_rtol, atol=fun_atol)
+    sys.stdout.write('done.\n')
+
+    colors = 'krgb'
+    for i in range(1):
+        ax1.plot(sol['t']*1e9, sol['y'][i], colors[i], lw=1, label=labels[i])
+        #ax1.plot(sol_be['t']*1e9, sol_be['y'][i], colors[i]+'o-', lw=1, \
+        #         label='BE', markersize=4, markerfacecolor='r')
+        ax1.plot(sol_trap['t']*1e9, sol_trap['y'][i], colors[i]+'s-', lw=1, \
+                 label='TRAP', markersize=4, markerfacecolor='g')
+    ax1.set_xlabel('Time (ns)')
+    ax1.set_ylabel('Current (A)')
+    ax1.legend(loc='best')
+    for i in range(1):
+        ax2.plot(sol['t']*1e9, sol['y'][i+3], colors[i], lw=1, label=labels[i+3])
+        #ax2.plot(sol_be['t']*1e9, sol_be['y'][i+3], colors[i]+'o-', lw=1, \
+        #         label='BE', markersize=4, markerfacecolor='r')
+        ax2.plot(sol_trap['t']*1e9, sol_trap['y'][i+3], colors[i]+'s-', lw=1, \
+                 label='TRAP', markersize=4, markerfacecolor='g')
     ax2.set_xlabel('Time (ns)')
     ax2.set_ylabel('Voltage (V)')
     ax2.legend(loc='best')
@@ -80,7 +195,7 @@ def system():
 
 
 cmds = {'system': system, \
-        #'envelope': envelope, \
+        'envelope': envelope, \
         #'variational': variational_integration, \
         #'variational-envelope': variational_envelope, \
         #'shooting': shooting, \
@@ -88,7 +203,7 @@ cmds = {'system': system, \
 }
 
 cmd_descriptions = {'system': 'integrate the ASK/OOK oscillator', \
-                    #'envelope': 'compute the envelope of the buck converter', \
+                    'envelope': 'compute the envelope of the ASK/OOK oscillator', \
                     #'variational': 'integrate the buck converter and its variational part', \
                     #'variational-envelope': 'compute the envelope of the buck converter with variational part', \
                     #'shooting': 'perform a shooting analysis of the buck converter', \
