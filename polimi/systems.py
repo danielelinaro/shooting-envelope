@@ -604,23 +604,58 @@ def ask_ook_upper_test():
 
 
 def hr_test():
+    import time
     import numpy as np
     import matplotlib.pyplot as plt
     from scipy.integrate import solve_ivp
+    from solvers import backward_euler, trapezoidal, backward_euler_var_step, trapezoidal_var_step
     b = 3
     I = 5
-    tend = 500
+    tend = 50
     hr = HindmarshRose(I, b)
     y0 = [0,1,0.1]
-    atol = 1e-8
-    rtol = 1e-10
-    sol = solve_ivp(hr, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
-    plt.plot(sol['t'],sol['y'][0],'r',label='RK45',)
+    atol = 1e-6
+    rtol = 1e-8
+
+    elapsed = {}
+
+    start = time.time()
     sol = solve_ivp(hr, [0,tend], y0, method='BDF', jac=hr.jac, atol=atol, rtol=rtol)
+    elapsed['BDF'] = time.time() - start
     plt.plot(sol['t'],sol['y'][0],'k',label='BDF')
+
+    start = time.time()
+    sol = solve_ivp(hr, [0,tend], y0, method='RK45', atol=atol, rtol=rtol)
+    elapsed['RK45'] = time.time() - start
+    plt.plot(sol['t'],sol['y'][0],'r',label='RK45')
+
+    start = time.time()
+    sol = trapezoidal(hr, [0,tend], y0, 0.01)
+    elapsed['TRAP'] = time.time() - start
+    plt.plot(sol['t'],sol['y'][0],'g',label='TRAP')
+
+    start = time.time()
+    sol = trapezoidal_var_step(hr, [0,tend], y0, 0.01, atol=atol, rtol=rtol)
+    elapsed['TRAP-VAR-H'] = time.time() - start
+    plt.plot(sol['t'],sol['y'][0],'b',label='TRAP var step')
+
+    start = time.time()
+    sol = backward_euler(hr, [0,tend], y0, 0.001)
+    elapsed['BE'] = time.time() - start
+    plt.plot(sol['t'],sol['y'][0],'c',label='BE')
+
+    start = time.time()
+    sol = backward_euler_var_step(hr, [0,tend], y0, 0.001, atol=atol, rtol=rtol)
+    elapsed['BE-VAR-H'] = time.time() - start
+    plt.plot(sol['t'],sol['y'][0],'m',label='BE var step')
+
     plt.legend(loc='best')
     plt.xlabel('Time')
     plt.ylabel('x')
+
+    for k,v in elapsed.items():
+        print('{:>11s} - {:6.3f} sec'.format(k,v))
+
     plt.show()
 
 

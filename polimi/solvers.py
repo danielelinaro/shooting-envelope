@@ -1,48 +1,79 @@
 
-__all__ = ['forward_euler', 'backward_euler', 'trapezoidal', 'backward_euler_var_step', 'trapezoidal_var_step']
+__all__ = ['newton', 'forward_euler', 'backward_euler', 'trapezoidal', 'backward_euler_var_step', 'trapezoidal_var_step']
 
 import numpy as np
-from numpy.linalg import norm
+from numpy.linalg import norm, inv, lstsq
+
+def newton_1D(func, x0, fprime):
+    x_cur = x0
+    f_cur = func(x_cur)
+    cnt = 0
+    print('[{:02d}] {:10.3e} {:10.3e}'.format(cnt, x_cur, f_cur))
+    while True:
+        x_next = x_cur - f_cur / fprime(x_cur)
+        f_next = func(x_next)
+        cnt += 1
+        print('[{:02d}] {:10.3e} {:10.3e}'.format(cnt, x_next, f_next))
+        if np.abs(x_cur - x_next) < 1e-6 or np.abs(f_cur - f_next) < 1e-6:
+            break
+        x_cur = x_next
+        f_cur = f_next
+    return x_next,f_next
 
 
-def forward_euler(fun, t_span, y0, h):
+def newton(func, x0, fprime, xtol=1e-6, ftol=1e-6, max_step=100):
+    x_cur = x0
+    f_cur = func(x_cur)
+    cnt = 0
+    while cnt < max_step:
+        x_next = x_cur - inv(fprime(x_cur)) @ f_cur
+        f_next = func(x_next)
+        cnt += 1
+        if norm(x_cur - x_next) < xtol or norm(f_cur - f_next) < ftol:
+            break
+        x_cur = x_next
+        f_cur = f_next
+    return x_next
+
+
+def forward_euler(sys, t_span, y0, h):
     n_dim = len(y0)
     t = np.arange(t_span[0],t_span[1],h)
     n_steps = len(t)
     y = np.zeros((n_dim,n_steps))
     y[:,0] = y0
     for i in range(1,n_steps):
-        y[:,i] = y[:,i-1] + h*fun(t[i-1],y[:,i-1])
+        y[:,i] = y[:,i-1] + h * sys(t[i-1],y[:,i-1])
     return {'t': t, 'y': y}
 
 
-def backward_euler(fun, t_span, y0, h):
-    from scipy.optimize import fsolve
+def backward_euler(sys, t_span, y0, h):
     n_dim = len(y0)
     t = np.arange(t_span[0],t_span[1],h)
     n_steps = len(t)
     y = np.zeros((n_dim,n_steps))
     y[:,0] = y0
+    I = np.eye(n_dim)
+    J = lambda t,y: I - h * sys.jac(t,y)
     for i in range(1,n_steps):
-        y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h*fun(t[i],Y), y[:,i-1])
+        y[:,i] = newton(lambda Y: Y - y[:,i-1] - h * sys(t[i],Y), y[:,i-1], lambda Y: J(t[i],Y))
     return {'t': t, 'y': y}
 
 
-def trapezoidal(fun, t_span, y0, h):
-    from scipy.optimize import fsolve
+def trapezoidal(sys, t_span, y0, h):
     n_dim = len(y0)
     t = np.arange(t_span[0],t_span[1],h)
     n_steps = len(t)
     y = np.zeros((n_dim,n_steps))
     y[:,0] = y0
+    I = np.eye(n_dim)
+    J = lambda t,y: I - h/2 * sys.jac(t,y)
     for i in range(1,n_steps):
-        y[:,i] = fsolve(lambda Y: Y-y[:,i-1]-h/2*(fun(t[i-1],y[:,i-1])+fun(t[i],Y)), y[:,i-1])
+        y[:,i] = newton(lambda Y: Y - y[:,i-1] - h/2 * (sys(t[i-1],y[:,i-1]) + sys(t[i],Y)), y[:,i-1], lambda Y: J(t[i],Y))
     return {'t': t, 'y': y}
 
 
-def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
-    from scipy.optimize import fsolve
-    import ipdb
+def backward_euler_var_step(sys, t_span, y0, h0, hmax=np.inf, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
     if np.isscalar(y0):
         n_dim = 1
     else:
@@ -50,11 +81,11 @@ def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exa
     t = np.array([t_span[0]])
     y = np.zeros((n_dim,1))
     y[:,0] = y0
-    dy = [fun(t_span[0],y0)]
+    dy = [sys(t_span[0],y0)]
     h = h0
     t_cur = t_span[0]
     y_cur = y[:,0]
-    dy_cur = fun(t_cur,y_cur)
+    dy_cur = sys(t_cur,y_cur)
     if verbose:
         if exact is None:
             print('%13s %13s %13s %13s %13s %13s %13s %13s' % \
@@ -62,14 +93,15 @@ def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exa
         else:
             print('%13s %13s %13s %13s %13s %13s %13s %13s %13s' % \
                   ('t_cur','h','y_cur','t_next','h_next','y_next','y_exact','scale','LTE'))
+    I = np.eye(n_dim)
     while t_cur < t_span[1]:
         t_next = t_cur + h
         if t_next > t_span[1]:
             t_next = t_span[1]
             h = t_next - t_cur
-        y_next = fsolve(lambda Y: Y-y_cur-h*fun(t_next,Y), y_cur)
+        y_next = newton(lambda Y: Y - y_cur - h * sys(t_next,Y), y_cur, lambda Y: I - h * sys.jac(t_next,Y))
         scale = rtol * np.abs(y_next) + atol
-        dy_next = fun(t_next,y_next)
+        dy_next = sys(t_next,y_next)
         coeff = np.abs(dy_next * (dy_next-dy_cur)/(y_next-y_cur))
         lte = (h**2)/2 * coeff
         h_new = np.min((hmax,np.min(0.9*np.sqrt(2*scale/coeff))))
@@ -95,9 +127,7 @@ def backward_euler_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exa
     return {'t': t, 'y': y}
 
 
-def trapezoidal_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
-    from scipy.optimize import fsolve
-    import ipdb
+def trapezoidal_var_step(sys, t_span, y0, h0, hmax=np.inf, rtol=1e-3, atol=1e-6, exact=None, verbose=False):
     if np.isscalar(y0):
         n_dim = 1
     else:
@@ -105,11 +135,11 @@ def trapezoidal_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exact=
     t = np.array([t_span[0]])
     y = np.zeros((n_dim,1))
     y[:,0] = y0
-    f = [fun(t_span[0],y0)]
+    f = [sys(t_span[0],y0)]
     h = h0
     t_cur = t_span[0]
     y_cur = y[:,0]
-    f_cur = fun(t_cur,y_cur)
+    f_cur = sys(t_cur,y_cur)
     df_cur = np.zeros(n_dim)
 
     if verbose:
@@ -119,14 +149,15 @@ def trapezoidal_var_step(fun, t_span, y0, h0, hmax, rtol=1e-3, atol=1e-6, exact=
         else:
             print('%13s %13s %13s %13s %13s %13s %13s %13s %13s' % \
                   ('t_cur','h','y_cur','t_next','h_next','y_next','y_exact','scale','LTE'))
+    I = np.eye(n_dim)
     while t_cur < t_span[1]:
         t_next = t_cur + h
         if t_next > t_span[1]:
             t_next = t_span[1]
             h = t_next - t_cur
-        y_next = fsolve(lambda Y: Y-y_cur-h/2*(fun(t_cur,y_cur)+fun(t_next,Y)), y_cur)
+        y_next = newton(lambda Y: Y - y_cur - h/2 * (sys(t_cur,y_cur) + sys(t_next,Y)), y_cur, lambda Y: I - h/2 * sys.jac(t_next,Y))
         scale = rtol * np.abs(y_next) + atol
-        f_next = fun(t_next,y_next)
+        f_next = sys(t_next,y_next)
         df_next = (f_next-f_cur)/(y_next-y_cur)
         d2f_next = (df_next-df_cur)/(y_next-y_cur)
         coeff = np.abs(f_next * (f_next*d2f_next + 2*(df_next**2)))
@@ -481,28 +512,32 @@ def AB(fun, t_span, y0, h, order):
 
 
 def vanderpol():
-    from systems import vdp
+    from systems import VanderPol
     import matplotlib.pyplot as plt
     from scipy.integrate import solve_ivp
+    import time
     A = [0]
     T = [1]
     epsilon = 1e-3
     y0 = [2e-3,0]
     tend = 1000
     h = 0.05
-    fun = lambda t,y: vdp(t,y,epsilon,A,T)
-    sol = solve_ivp(fun, [0,tend], y0, method='RK45', rtol=1e-6, atol=1e-8)
+    vdp = VanderPol(epsilon, A, T)
+    sol = solve_ivp(vdp, [0,tend], y0, method='BDF', jac=vdp.jac, rtol=1e-10, atol=1e-8)
     #sol_fw = forward_euler(fun, [0,tend], y0, h/5)
-    #sol_bw = backward_euler(fun, [0,tend], y0, h/5)
-    k_am = 3
-    sol_bdf = BDF(fun, [0,tend], y0, h, order=k_am)
-    k_ab = 3
-    sol_ab = AB(fun, [0,tend], y0, h, order=k_ab)
+    start = time.time()
+    sol_bw = backward_euler(vdp, [0,tend], y0, h/5)
+    elapsed = time.time() - start
+    print('Elapsed time: {:.3f} sec.'.format(elapsed))
+    #k_am = 3
+    #sol_bdf = BDF(fun, [0,tend], y0, h, order=k_am)
+    #k_ab = 3
+    #sol_ab = AB(fun, [0,tend], y0, h, order=k_ab)
     plt.plot(sol['t'],sol['y'][0],'k',label='solve_ivp')
     #plt.plot(sol_fw['t'],sol_fw['y'][0],'b',label='FW')
-    #plt.plot(sol_bw['t'],sol_bw['y'][0],'r',label='BW')
-    plt.plot(sol_bdf['t'],sol_bdf['y'][0],'b',label='A-M(%d)'%k_am)
-    plt.plot(sol_ab['t'],sol_ab['y'][0],'m',label='A-B(%d)'%k_ab)
+    plt.plot(sol_bw['t'],sol_bw['y'][0],'r',label='BW')
+    #plt.plot(sol_bdf['t'],sol_bdf['y'][0],'b',label='A-M(%d)'%k_am)
+    #plt.plot(sol_ab['t'],sol_ab['y'][0],'m',label='A-B(%d)'%k_ab)
     plt.legend(loc='best')
     plt.show()
 
@@ -581,10 +616,11 @@ def main():
 
 if __name__ == '__main__':
     #main()
-    #vanderpol()
+    vanderpol()
     #ab_test()
     #bdf_test()
     #be_test()
-    be_var_step_test()
+    #be_var_step_test()
     #trap_test()
-    trap_var_step_test()
+    #trap_var_step_test()
+    #newton_test()
