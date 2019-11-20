@@ -21,18 +21,23 @@ def newton_1D(func, x0, fprime):
     return x_next,f_next
 
 
-def newton(func, x0, fprime, xtol=1e-6, ftol=1e-6, max_step=100):
+def newton(func, x0, fprime, xtol=1e-6, ftol=1e-6, max_step=100, full_output=False):
     x_cur = x0
     f_cur = func(x_cur)
-    cnt = 0
-    while cnt < max_step:
+    info = {'nfev': 1, 'njev': 0, 'nstep': 0}
+    while info['nstep'] < max_step:
         x_next = x_cur - inv(fprime(x_cur)) @ f_cur
         f_next = func(x_next)
-        cnt += 1
-        if norm(x_cur - x_next) < xtol or norm(f_cur - f_next) < ftol:
+        info['nfev'] += 1
+        info['njev'] += 1
+        info['nstep'] += 1
+        if np.max(np.abs(x_cur - x_next)) < xtol or np.max(np.abs(f_cur - f_next)) < ftol:
             break
         x_cur = x_next
         f_cur = f_next
+    info['fval'] = f_next
+    if full_output:
+        return x_next,info
     return x_next
 
 
