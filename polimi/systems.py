@@ -344,7 +344,7 @@ def square_wave(t, A, T, DC, tr, tf):
 
 class ASK_OOK (DynamicalSystem):
 
-    def __init__(self, with_variational=False, variational_T=1, **kwargs):
+    def __init__(self, with_variational=False, variational_T=1, linearized_diode=True, **kwargs):
         super(ASK_OOK, self).__init__(8, with_variational, variational_T)
 
         self._set_default_pars(**kwargs)
@@ -363,6 +363,22 @@ class ASK_OOK (DynamicalSystem):
 
         self._Vg1 = lambda t: square_wave(t, self.VDD, self.T1, self.DC1, 10e-9, 10e-9)
         self._Vg2 = lambda t: square_wave(t, self.VDD, self.T2, self.DC2, 10e-12, 10e-12)
+
+        self.linearized_diode = linearized_diode
+        if linearized_diode:
+            # fix the maximum diode current in the exponential part (Id0) and compute
+            # the corresponding value of voltage (Vd0)
+            # for voltages above Vd0, the diode current grows linearly with the function,
+            # with the same slope of the exponential part computed in Vd0
+            self.Id0 = 5 # [A]
+            self.Vd0 = self.eta * self.VTemp * np.log(1 + self.Id0 / self.IS) # [V]
+            self.linearized_I_diode = {}
+            self.linearized_I_diode['m'] = self.IS / (self.eta * self.VTemp) * \
+                                                np.exp(self.Vd0 / (self.eta * self.VTemp))
+            self.linearized_I_diode['q'] = self.Id0 - self.linearized_I_diode['m'] * self.Vd0
+            self._I_diode = self._I_diode_linearized
+        else:
+            self._I_diode = self._I_diode_exp
 
         # Jacobian matrix
         JAC = np.zeros((self.n_dim,self.n_dim))
@@ -388,6 +404,7 @@ class ASK_OOK (DynamicalSystem):
         JAC[7,5] = 1 / (self.Cm2 * self.Rd2)
         self.JAC = JAC
 
+
     def _set_default_pars(self, **kwargs):
         F1 = 1e6
         F2 = 2e9
@@ -406,8 +423,14 @@ class ASK_OOK (DynamicalSystem):
         return 0.5 * self.beta * (v + np.log(np.exp(v) + np.exp(-v))) * np.tanh(self.alpha * Vds)
 
 
-    def _I_diode(self, Vd):
+    def _I_diode_exp(self, Vd):
         return self.IS * (np.exp(Vd/(self.eta * self.VTemp)) - 1)
+
+
+    def _I_diode_linearized(self, Vd):
+        if Vd <= self.Vd0:
+            return self.IS * (np.exp(Vd/(self.eta * self.VTemp)) - 1)
+        return self.linearized_I_diode['m'] * Vd + self.linearized_I_diode['q']
 
 
     def _fun(self, t, y):
@@ -447,13 +470,16 @@ class ASK_OOK (DynamicalSystem):
 
         # Jacobian matrix
         jac = self.JAC.copy()
-        jac[6,6] = (- np.exp((d10 - self.VDD)/(self.VTemp * self.eta)) * self.IS / (self.VTemp * self.eta) - \
-                    0.5 * self.alpha * self.beta * (self.KT * (self._Vg1(t) - self.VT) + \
-                    np.log(np.exp(-self.KT * (self._Vg1(t)-self.VT)) + np.exp(self.KT * (self._Vg1(t) - self.VT)))) * \
-                    (sech((self.VDD - d10) * self.alpha)**2)) / self.Cm1
+        if self.linearized_diode and (d10 - self.VDD) > self.Vd0:
+            coeff = (self.Id0 + self.IS) / (self.VTemp * self.eta)
+        else:
+            coeff = np.exp((d10 - self.VDD)/(self.VTemp * self.eta)) * self.IS / (self.VTemp * self.eta)
+        jac[6,6] = (- coeff - 0.5 * self.alpha * self.beta * (self.KT * (self._Vg1(t) - self.VT) + \
+                        np.log(np.exp(-self.KT * (self._Vg1(t)-self.VT)) + np.exp(self.KT * (self._Vg1(t) - self.VT)))) * \
+                        (sech((self.VDD - d10) * self.alpha)**2)) / self.Cm1
         jac[7,7] = (-1 / self.Rd2 - 0.5 * self.alpha * self.beta * (self.KT * (self._Vg2(t) - self.VT) +
-                    np.log(np.exp(-self.KT * (self._Vg2(t) - self.VT)) + np.exp(self.KT * (self._Vg2(t) - self.VT)))) *
-                    (sech(self.alpha * d20)**2)) / self.Cm2
+                        np.log(np.exp(-self.KT * (self._Vg2(t) - self.VT)) + np.exp(self.KT * (self._Vg2(t) - self.VT)))) *
+                        (sech(self.alpha * d20)**2)) / self.Cm2
         return jac
 
 
@@ -502,12 +528,9 @@ class ASK_OOK_upper (ASK_OOK):
         y_dot = np.zeros(self.n_dim)
         y_dot[0] = (d10 - self.Rd1 * IL1) / self.L1
         y_dot[1] = - (self._I_diode(d10 - self.VDD) + IL1 - self._I_mos(self._Vg1(t), self.VDD - d10)) / self.Cm1
-        #print('{:12.4e} {:12.4e}'.format(t, self._Vg1(t)))
-        #if self._Vg1(t) > 1.5:
-        #    import ipdb
-        #    ipdb.set_trace()
 
         return y_dot
+
 
 
 def ask_ook_lower_test():
@@ -660,7 +683,9 @@ def hr_test():
 
 
 if __name__ == '__main__':
-    hr_test()
+    #hr_test()
     #ask_ook_lower_test()
     #ask_ook_upper_test()
+    ask_ook_test()
+
     

@@ -37,8 +37,7 @@ def system():
     fun_rtol = 1e-8
     fun_atol = 1e-8
 
-    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R,
-                clock_phase=0, use_compensating_ramp=use_ramp)
+    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
 
     print('Vector field index at the beginning of the integration: %d.' % buck.vector_field_index)
     sol = solve_ivp_switch(buck, t_span, y0, \

@@ -9,13 +9,12 @@ from .. import switching
 from ..solvers import newton
 
 DEBUG = True
-VERBOSE_DEBUG = False
 if DEBUG:
     from .. import utils
     colors = utils.ColorFactory()
 
-NEWTON_KRYLOV_FTOL = 1e-3
-FSOLVE_XTOL = 1e-1
+NEWTON_FTOL = 1e-3
+NEWTON_XTOL = 1e-1
 
 __all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope']
 
@@ -111,7 +110,7 @@ class EnvelopeSolver (object):
                 self.T_var = -1
                 print('EnvelopeSolver.__init__(%.4e)> will not compute variational LTE.' % 0)
             self.t_span = [0,1]
-            self.mono_mat = []
+            self.monodromy_matrices = []
             self.t_var = []
             self.y_var = []
             self.var_atol = var_atol
@@ -199,7 +198,7 @@ class EnvelopeSolver (object):
                'T': np.array([self.period[i] for i in idx]),
                'period_eval': self.original_fun_period_eval}
         if self.is_variational:
-            sol['M'] = [self.mono_mat[i] for i in idx[:-1]]
+            sol['M'] = [self.monodromy_matrices[i] for i in idx[:-1]]
             sol['y'] = np.zeros((n_dim+n_dim**2, len(idx)))
             sol['y'][:n_dim,:] = self.y[:,idx]
             sol['y'][n_dim:,0] = np.eye(n_dim).flatten()
@@ -262,7 +261,7 @@ class EnvelopeSolver (object):
             t1 = t_cur + self.T_var
             t2 = t_cur + n_periods_var * self.T_var
             y0_var = np.eye(self.system.n_dim)
-            for mat in self.mono_mat:
+            for mat in self.monodromy_matrices:
                 y0_var = mat @ y0_var
             y1_var = M_var @ y0_var
             y2_var = y0_var.copy()
@@ -305,7 +304,7 @@ class EnvelopeSolver (object):
         self.f_next = f_next
 
         if self.is_variational:
-            self.mono_mat.append(np.linalg.matrix_power(M,n_periods))
+            self.monodromy_matrices.append(np.linalg.matrix_power(M,n_periods))
             if self.compute_variational_LTE:
                 self.t_var.append(t0)
                 self.t_var.append(t1)
@@ -322,11 +321,11 @@ class EnvelopeSolver (object):
         n_dim = self.system.n_dim
         if self.is_variational:
             M,M_var,self.T_var = self._compute_monodromy_matrix(self.t[-1],self.y[:,-1])
-            self.mono_mat.append(M)
+            self.monodromy_matrices.append(M)
             ### TODO: check the following code
             if self.compute_variational_LTE:
                 y0_var = np.eye(n_dim)
-                for mat in self.mono_mat:
+                for mat in self.monodromy_matrices:
                     y0_var = M_var @ y0_var
                 y1_var = M_var @ y0_var
                 y2_var = y1_var.copy()
@@ -348,20 +347,30 @@ class EnvelopeSolver (object):
 
         
     def _envelope_fun(self, t, y, T_guess=None):
-        self._last_t = t
-        self._last_y = y
+        # the state of the system at the last call
+        self._last_envelope_fun_call = {'t': t, 'y': y, 'phi': None}
+
+        # we integrate the variational system in parallel to the original
+        # one in order to compute the sensitivity matrix
+        n_dim = self.system.n_dim
+        y_ext = np.concatenate((y, np.eye(n_dim).flatten()))
         with_variational = self.system.with_variational
-        self.system.with_variational = False
+        self.system.with_variational = True
+        solver_kwargs = self.solver_kwargs.copy()
+        if 'jac' in solver_kwargs:
+            solver_kwargs.pop('jac')
+
         if not self.estimate_T:
-            sol = self.solver(self.system, [t,t+self.T], y, **self.solver_kwargs)
+            sol = self.solver(self.system, [t,t+self.T], y_ext, **solver_kwargs)
+            # the new state
             self.t_new = t + self.T
-            self.y_new = sol['y'][:,-1]
-            if VERBOSE_DEBUG:
-                print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.6f,%.6f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T))
+            self.y_new = sol['y'][:n_dim,-1]
+            # the sensitivity matrix at the end of the period (i.e., the monodromy matrix)
+            self._last_envelope_fun_call['phi'] = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
             # return the "vector field" of the envelope
             self.original_fun_period_eval += 1
             self.system.with_variational = with_variational
-            return 1./self.T * (sol['y'][:,-1] - y)
+            return 1./self.T * (sol['y'][:n_dim,-1] - y)
 
         if T_guess is None:
             T_guess = self.T
@@ -375,9 +384,11 @@ class EnvelopeSolver (object):
         events_fun.direction = 1
         events_fun.terminal = 1
 
-        sol = self.solver(self.system, [t,t+2*T_guess], y, \
+        sol = self.solver(self.system, [t,t+2*T_guess], y_ext, \
                           events=events_fun, dense_output=True, \
-                          **self.solver_kwargs)
+                          **solver_kwargs)
+        self.original_fun_period_eval += 1
+        self.system.with_variational = with_variational
 
         try:
             # find the first event that is not the initial time
@@ -390,17 +401,25 @@ class EnvelopeSolver (object):
 
         self.T_new = T
         self.t_new = t + self.T_new
-        self.y_new = sol['sol'](self.t_new)
-        if VERBOSE_DEBUG:
-            print('EnvelopeSolver._envelope_fun(%.4e)> y = (%.4f,%.4f) T = %.3e.' % (t,self.y_new[0],self.y_new[1],self.T_new))
-        self.original_fun_period_eval += 1
-        self.system.with_variational = with_variational
+        Y = sol['sol'](self.t_new)
+        self.y_new = Y[:n_dim]
+        self._last_envelope_fun_call['phi'] = np.reshape(Y[n_dim:],(n_dim,n_dim)).copy()
         # return the "vector field" of the envelope
         return 1./self.T_new * (self.y_new - sol['sol'](t))
 
 
-    def _envelope_phi(self, t, y, H):
-        raise NotImplementedError
+    def _get_stored_monodromy_matrix(self, t, y):
+        if t == self._last_envelope_fun_call['t'] and \
+           np.all(y == self._last_envelope_fun_call['y']):
+            return self._last_envelope_fun_call['phi']
+        estimate_T_var = self.estimate_T_var
+        compute_variational_LTE = self.compute_variational_LTE
+        self.estimate_T_var = False
+        self.compute_variational_LTE = False
+        phi,_,_ = self._compute_monodromy_matrix(t, y)
+        self.estimate_T_var = estimate_T_var
+        self.compute_variational_LTE = compute_variational_LTE
+        return phi
 
 
     def _variational_system(self, t, y):
@@ -494,38 +513,16 @@ class BEEnvelope (EnvelopeSolver):
                                          T_var_guess, var_rtol, var_atol,
                                          solver, **kwargs)
 
-    def _envelope_phi(self, t, y, H):
-        self.estimate_T_var = False
-        self.compute_variational_LTE = False
-        phi,_,_ = self._compute_monodromy_matrix(t, y)
+
+    def _envelope_jac(self, t, y, H):
+        phi = self._get_stored_monodromy_matrix(t, y)
         return (1 + H / self.T) * np.eye(self.system.n_dim) - H / self.T * phi
 
 
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
-        if False:
-            elapsed = {}
-            print('-- NK --')
-            start = time.time()
-            a = newton_krylov(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, \
-                              f_tol=NEWTON_KRYLOV_FTOL)
-            elapsed['NK'] = time.time() - start
-            print('-- FS --')
-            start = time.time()
-            b,info_fs,ier,msg = fsolve(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, \
-                                       fprime=lambda Y: self._envelope_phi(t_next,Y,H), xtol=FSOLVE_XTOL, full_output=True)
-            elapsed['FS'] = time.time() - start
-            print('-- NR --')
-            start = time.time()
-            c,info_nr = newton(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, \
-                               fprime=lambda Y: self._envelope_phi(t_next,Y,H), \
-                               xtol=FSOLVE_XTOL, ftol=NEWTON_KRYLOV_FTOL, full_output=True)
-            elapsed['NR'] = time.time() - start
-            import ipdb
-            ipdb.set_trace()
-            return c
         return newton(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, \
-                      fprime=lambda Y: self._envelope_phi(t_next,Y,H), \
-                      xtol=FSOLVE_XTOL, ftol=NEWTON_KRYLOV_FTOL)
+                      fprime=lambda Y: self._envelope_jac(t_next,Y,H), \
+                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
@@ -576,39 +573,15 @@ class TrapEnvelope (EnvelopeSolver):
         self.df_cur = (self.f[:,-1] - self.f[:,-2]) / (self.y[:,-1] - self.y[:,-2])
 
 
-    def _envelope_phi(self, t, y, H):
-        self.estimate_T_var = False
-        self.compute_variational_LTE = False
-        phi,_,_ = self._compute_monodromy_matrix(t, y)
+    def _envelope_jac(self, t, y, H):
+        phi = self._get_stored_monodromy_matrix(t, y)
         return (1 + (H/2) / self.T) * np.eye(self.system.n_dim) - (H/2) / self.T * phi
 
 
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
-        if False:
-            elapsed = {}
-            print('-- NK --')
-            start = time.time()
-            a = newton_krylov(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
-                              y_guess, f_tol=NEWTON_KRYLOV_FTOL)
-            elapsed['NK'] = time.time() - start
-            print('-- FS --')
-            start = time.time()
-            b,info_fs,ier,msg = fsolve(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
-                                       y_guess, fprime=lambda Y: self._envelope_phi(t_next,Y,H), xtol=FSOLVE_XTOL, \
-                                       full_output=True)
-            elapsed['FS'] = time.time() - start
-            print('-- NR --')
-            start = time.time()
-            c,info_nr = newton(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
-                               y_guess, fprime=lambda Y: self._envelope_phi(t_next,Y,H), \
-                               xtol=FSOLVE_XTOL, ftol=NEWTON_KRYLOV_FTOL, full_output=True)
-            elapsed['NR'] = time.time() - start
-            import ipdb
-            ipdb.set_trace()
-            return c
         return newton(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
-                      y_guess, fprime=lambda Y: self._envelope_phi(t_next,Y,H), \
-                      xtol=FSOLVE_XTOL, ftol=NEWTON_KRYLOV_FTOL)
+                      y_guess, fprime=lambda Y: self._envelope_jac(t_next,Y,H), \
+                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
