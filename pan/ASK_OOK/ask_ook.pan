@@ -6,7 +6,9 @@ options rawkeep=true
 
 Eq dc annotate=3 print=true vabstol=1p vreltol=1p ireltol=1p
 Tr tran stop=100/F1 trabstol=1a vabstol=0.1p iabstol=0.1p tmax=1m/F1 devvars=yes uic=0
-En envelope period=1/F1 tstop=300/F1 trabstol=1a vabstol=0.1p iabstol=0.1p \
+; Sh shooting period=1/F2 floquet=1 method=2 order=2 annotate=0 \
+;         solver=0 cmin=0 tmax=1m/F1 restart=0 printnodes=yes
+En envelope period=1/F1 tstop=2/F2 trabstol=1a vabstol=0.1p iabstol=0.1p \
             corrector=0.5 tmax=10m/F1 restart=0
 
 Evv   vdd    gnd   vsource vdc=VDD
