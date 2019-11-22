@@ -87,7 +87,7 @@ def system():
 
 def envelope():
 
-    t_tran = 100 / F2
+    t_tran = 1 / F2
     fun_atol = 1e-6
     fun_rtol = 1e-8
     ckt,sol = init(t_tran, fun_atol, fun_rtol)
@@ -114,16 +114,19 @@ def envelope():
     for var,ic in zip(var_names,y0):
         print('{:>10s} = {:13.5e}'.format(var,ic))
 
-    t_span = t_tran + np.array([0, 100 * ckt.T2])
+    t_span = t_tran + np.array([0, ckt.T1])
     vars_to_use = [2, 3, 5, 7]
 
-    trap_solver = TrapEnvelope(ckt, t_span, y0, max_step=20, \
+    trap_solver = TrapEnvelope(ckt, t_span, y0, max_step=50, \
                                T_guess=None, T=ckt.T2, vars_to_use=vars_to_use, \
                                env_rtol=1e-1, env_atol=1e-2, \
                                solver=solve_ivp, \
                                jac=ckt.jac, method='BDF', \
                                rtol=fun_rtol, atol=fun_atol)
+    start = time.time()
     sol_trap = trap_solver.solve()
+    elapsed = time.time() - start
+    print('Elapsed time: {:.2f} sec.'.format(elapsed))
 
     for t0,y0 in zip(sol_trap['t'],sol_trap['y'].T):
         sol = solve_ivp(ckt, [t0,t0+ckt.T2], y0, method='BDF', \
@@ -145,6 +148,68 @@ def envelope():
     ax2.set_xlabel('Time (ns)')
     ax2.set_ylabel('Voltage (V)')
     ax2.legend(loc='best')
+
+    plt.show()
+
+
+def variational(envelope):
+    ckt,y0 = init()
+
+    print('Initial condition for variational transient analysis:')
+    print('{:>10s} {:>13s}'.format('Variable','Value'))
+    var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
+    for var,ic in zip(var_names,y0):
+        print('{:>10s} = {:13.5e}'.format(var,ic))
+
+    fun_atol = 1e-6
+    fun_rtol = 1e-8
+    N = ckt.n_dim
+    T_large = ckt.T1
+    ckt.with_variational = True
+    ckt.variational_T = T_large
+
+    t_span_var = [0,1]
+    y0_var = np.concatenate((y0,np.eye(N).flatten()))
+
+    if envelope:
+        outfile = 'ASK_OOK_variational_envelope.pkl'
+    else:
+        outfile = 'ASK_OOK_variational.pkl'
+
+    if os.path.isfile(outfile):
+        sol = pickle.load(open(outfile, 'rb'))
+    else:
+        if envelope:
+            solver = TrapEnvelope(ckt, [0,T_large], y0, T_guess=None, T=T_small, \
+                                  env_rtol=rtol, env_atol=atol, max_step=50, \
+                                  is_variational=True, T_var_guess=None, T_var=None, \
+                                  var_rtol=rtol, var_atol=atol, solver=solve_ivp, \
+                                  rtol=fun_rtol, atol=fun_atol, method='BDF')
+            start = time.time()
+            sol = solver.solve()
+        else:
+            start = time.time()
+            sol = solve_ivp(ckt, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+        elapsed = time.time() - start
+        print('Elapsed time: {:.2f} sec.'.format(elapsed))
+        pickle.dump(sol, open(outfile, 'wb'))
+
+    w,_ = np.linalg.eig(np.reshape(sol['y'][N:,-1],(N,N)))
+    print('Eigenvalues:')
+    for i in range(N):
+        print('{:9.2e} + j * {:9.2e}'.format(np.real(w[i]),np.imag(w[i])))
+
+    fig,ax = plt.subplots(9,8,sharex=True,figsize=(9,5))
+    for i in range(9):
+        for j in range(8):
+            k = i*8 + j
+            ax[i,j].plot(sol['t'], sol['y'][k], 'k', lw=0.5)
+            ax[i,j].plot([0,1],[0,0],'--',color=[.6,.6,.6],lw=1)
+            ax[i,j].set_xlim([0,1])
+            ax[i,j].set_xticks([0,1])
+            ax[i,j].set_xticklabels([])
+            ax[i,j].set_yticks(ax[i,j].get_ylim())
+            ax[i,j].set_yticklabels([])
 
     plt.show()
 
@@ -171,48 +236,46 @@ def shooting():
                      solver=solve_ivp, rtol=fun_rtol, atol=fun_atol, \
                      method='BDF')
 
-    now = time.time()
-    sol_shoot = shoot.run(y0_guess)
-    elapsed = time.time() - now
-    print('Number of iterations: %d.' % sol_shoot['n_iter'])
-    print('Elapsed time: %7.3f sec.' % elapsed)
+    outfile = 'ASK_OOK_shooting.pkl'
+    if os.path.isfile(outfile):
+        sol_shoot = pickle.load(open(outfile,'rb'))
+    else:
+        now = time.time()
+        sol_shoot = shoot.run(y0_guess)
+        elapsed = time.time() - now
+        print('Number of iterations: {}.'.format(sol_shoot['n_iter']))
+        print('Elapsed time: {.2f} sec.'.format(elapsed))
+        pickle.dump(sol_shoot, open(outfile,'wb'))
 
-    import pickle
-    pickle.dump(sol_shoot, open('shooting_ASK_OOK.pkl','wb'))
-
-    return
-    col = 'krgbcmy'
-    lw = 0.8
-    fig,ax = plt.subplots(3,1,sharex=True,figsize=(6,6))
-
-    for i,integr in enumerate(sol_shoot['integrations']):
-
-        y0 = integr['y'][:N,0]
-        y0_var = np.concatenate((y0,np.eye(N).flatten()))
-
-        for j in range(3):
-            ax[j].plot(integr['t'],integr['y'][j],col[i],lw=lw,label='Iter #%d' % (i+1))
-    ax[2].set_xlabel('Normalized time')
+    fig,ax = plt.subplots(1, 2, sharex=True, figsize=(10,4))
+    labels = ['i(Ltl)', 'i(L1)', 'i(L2)', \
+              'v(out)', 'v(l20)', 'v(l30)', 'v(d10)', 'v(d20)']
+    colors = 'krgbcmy'
+    jdx = [0,3]
+    for i,sol in enumerate(sol_shoot['integrations']):
+        for n,j in enumerate(jdx):
+            ax[n].plot(sol['t'], sol['y'][j], colors[i], lw=1, label=labels[j])
+            ax[n].set_xlabel('Time (ns)')
+    ax[0].set_ylabel('Current (A)')
+    ax[1].set_ylabel('Voltage (V)')
     ax[0].legend(loc='best')
-    ax[0].set_ylabel(r'$V_C$ (V)')
-    ax[1].set_ylabel(r'$I_L$ (A)')
-    ax[2].set_ylabel(r'$\int V_o$ $(\mathrm{V}\cdot\mathrm{s})$')
-    #plt.savefig('ask_ook_shooting.pdf')
+    ax[1].legend(loc='best')
+
     plt.show()
 
 
 cmds = {'system': system, \
         'envelope': envelope, \
-        #'variational': variational_integration, \
-        #'variational-envelope': variational_envelope, \
+        'variational': lambda : variational(False), \
+        'variational-envelope': lambda: variational(True), \
         'shooting': shooting, \
         #'shooting-envelope': shooting_envelope
 }
 
 cmd_descriptions = {'system': 'integrate the ASK/OOK RF modulator', \
                     'envelope': 'compute the envelope of the ASK/OOK RF modulator', \
-                    #'variational': 'integrate the buck converter and its variational part', \
-                    #'variational-envelope': 'compute the envelope of the buck converter with variational part', \
+                    'variational': 'integrate the ASK/OOK modulator and its variational part', \
+                    'variational-envelope': 'compute the envelope of the ASK/OOK modulator with variational part', \
                     'shooting': 'perform a shooting analysis of the ASK/OOK RF modulator', \
                     #'shooting-envelope': 'perform a shooting analysis of the buck converter using the envelope'
 }

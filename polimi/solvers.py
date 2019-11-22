@@ -1,6 +1,7 @@
 
 __all__ = ['newton', 'forward_euler', 'backward_euler', 'trapezoidal', 'backward_euler_var_step', 'trapezoidal_var_step']
 
+import time
 import numpy as np
 from numpy.linalg import norm, inv, lstsq
 
@@ -24,7 +25,8 @@ def newton_1D(func, x0, fprime):
 def newton(func, x0, fprime, xtol=1e-6, ftol=1e-6, max_step=100, full_output=False):
     x_cur = x0
     f_cur = func(x_cur)
-    info = {'nfev': 1, 'njev': 0, 'nstep': 0}
+    if full_output:
+        info = {'nfev': 1, 'njev': 0, 'nstep': 0, 'elapsed': time.time()}
     while info['nstep'] < max_step:
         x_next = x_cur - inv(fprime(x_cur)) @ f_cur
         f_next = func(x_next)
@@ -35,8 +37,9 @@ def newton(func, x0, fprime, xtol=1e-6, ftol=1e-6, max_step=100, full_output=Fal
             break
         x_cur = x_next
         f_cur = f_next
-    info['fval'] = f_next
     if full_output:
+        info['elapsed'] = time.time() - info['elapsed']
+        info['fval'] = f_next
         return x_next,info
     return x_next
 

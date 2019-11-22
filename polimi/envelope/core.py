@@ -2,7 +2,6 @@
 import time
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.optimize import fsolve, newton_krylov
 from scipy.interpolate import interp1d
 
 from .. import switching
@@ -522,7 +521,7 @@ class BEEnvelope (EnvelopeSolver):
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
         return newton(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, \
                       fprime=lambda Y: self._envelope_jac(t_next,Y,H), \
-                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL)
+                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL, max_step=1)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
@@ -581,7 +580,7 @@ class TrapEnvelope (EnvelopeSolver):
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
         return newton(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
                       y_guess, fprime=lambda Y: self._envelope_jac(t_next,Y,H), \
-                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL)
+                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL, max_step=1)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
