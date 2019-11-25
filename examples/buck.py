@@ -15,35 +15,52 @@ pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=
 
 progname = os.path.basename(sys.argv[0])
 
+# circuit parameters
+T = 50e-6
+Vref = 10
+kp = 0.1
+ki = 10
+R = 6
 
 F0 = 100
 def Vin(t, Vin0=20, dVin=1, F=F0):
     return Vin0 + dVin * np.sin(2*np.pi*F*t)
 
+# simulation parameters
+fun = {'rtol': 1e-10, 'atol': 1e-10}
+env = {'rtol': 1e-2, 'atol': 1e-3, 'max_step': 50, 'vars_to_use': [0,1]}
 
-def system():
-    T = 50e-6
-    Vref = 10
-    kp = 0.1
-    ki = 10
-    R = 6
 
-    t0 = 0
-    t_end = 2000*T
-    t_span = np.array([t0, t_end])
+def init(t_tran=10*T, y0=np.array([Vin(0),1,0]), rtol=fun['rtol'], atol=fun['atol']):
+    ckt = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
+    sol = solve_ivp_switch(ckt, [0,t_tran], y0, \
+                           method='BDF', jac=ckt.jac, \
+                           rtol=fun['rtol'], atol=fun['atol'])
+    return ckt,sol
 
-    y0 = np.array([Vin(0),1,0])
 
-    fun_rtol = 1e-8
-    fun_atol = 1e-8
+def print_state(y, msg=None):
+    if msg is not None:
+        print(msg)
+    print('{:>10s} {:>13s}'.format('Variable','Value'))
+    var_names = ['VC','IL','Int']
+    for name,state in zip(var_names,y):
+        print('{:>10s} = {:13.5e}'.format(name,state))
 
-    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
 
-    print('Vector field index at the beginning of the integration: %d.' % buck.vector_field_index)
-    sol = solve_ivp_switch(buck, t_span, y0, \
-                           method='BDF', jac=buck.jac, \
-                           rtol=fun_rtol, atol=fun_atol)
-    print('Vector field index at the end of the integration: %d.' % buck.vector_field_index)
+def tran():
+    ckt,tran = init()
+    t0 = tran['t'][-1]
+    y0 = tran['y'][:,-1]
+
+    print_state(y0, 'Initial condition for transient analysis:')
+    t_span = t0 + np.array([0, 10/F0])
+    start = time.time()
+    sol = solve_ivp_switch(ckt, t_span, y0, \
+                           method='BDF', jac=ckt.jac, \
+                           rtol=fun['rtol'], atol=fun['atol'])
+    elapsed = time.time() - start
+    print('Elapsed time: {:.2f} sec.'.format(elapsed))
 
     show_manifold = True
     if show_manifold:
@@ -76,72 +93,51 @@ def system():
         ax[3].legend(loc='best')
     else:
         ax[2].set_xlabel(r'Time ($\mu$s)')
+
+    plt.savefig('buck_tran.pdf')
+
     plt.show()
 
 
 def envelope():
-    T = 50e-6
-    Vref = 10
-    kp = 0.1
-    ki = 10
-    R = 6
+    ckt,tran = init()
+    t0 = tran['t'][-1]
+    y0 = tran['y'][:,-1]
 
-    y0 = np.array([Vin(0),1,0])
+    print_state(y0, 'Initial condition for envelope analysis:')
 
-    fun_rtol = 1e-10
-    fun_atol = 1e-12
+    t_span = t0 + np.array([0, 10/F0])
 
-    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
+    env_solver = TrapEnvelope(ckt, t_span, y0, max_step=env['max_step'], \
+                              T_guess=None, T=T, vars_to_use=env['vars_to_use'], \
+                              env_rtol=env['rtol'], env_atol=env['atol'], \
+                              solver=solve_ivp_switch, \
+                              jac=ckt.jac, method='BDF', \
+                              rtol=fun['rtol'], atol=fun['atol'])
+    start = time.time()
+    sol_env = env_solver.solve()
+    elapsed = time.time() - start
+    print('Elapsed time: {:.2f} sec.'.format(elapsed))
 
-    t_span = [0, 1/F0]
-    t_tran = 10*T
-    if t_tran > 0:
-        sol = solve_ivp_switch(buck, [0,t_tran], y0, \
-                               method='BDF', jac=buck.jac, \
-                               rtol=fun_rtol, atol=fun_atol)
-        #plt.plot(sol['t']*1e6,sol['y'][0],'k')
-        #plt.plot(sol['t']*1e6,sol['y'][1],'r')
-        #plt.show()
-        t_span += sol['t'][-1]
-        y0 = sol['y'][:,-1]
-
-    print('t_span =', t_span)
-    print('y0 =', y0)
-    print('index =', buck.vector_field_index)
-
-    print('-' * 81)
-    be_solver = BEEnvelope(buck, t_span, y0, max_step=50, \
-                           T_guess=None, T=T, vars_to_use=[0,1], \
-                           env_rtol=1e-2, env_atol=1e-3, \
-                           solver=solve_ivp_switch, \
-                           jac=buck.jac, method='BDF', \
-                           rtol=fun_rtol, atol=fun_atol)
-    sol_be = be_solver.solve()
-    print('-' * 81)
-    trap_solver = TrapEnvelope(buck, t_span, y0, max_step=50, \
-                               T_guess=None, T=T, vars_to_use=[0,1], \
-                               env_rtol=1e-2, env_atol=1e-3, \
-                               solver=solve_ivp_switch, \
-                               jac=buck.jac, method='BDF', \
-                               rtol=fun_rtol, atol=fun_atol)
-    sol_trap = trap_solver.solve()
-    print('-' * 81)
-
-    sys.stdout.write('Integrating the original system... ')
-    sys.stdout.flush()
-    sol = solve_ivp_switch(buck, t_span, y0, method='BDF',
-                           jac=buck.jac, rtol=fun_rtol, atol=fun_atol)
-    sys.stdout.write('done.\n')
+    for t0,y0 in zip(sol_env['t'],sol_env['y'].T):
+        sol = solve_ivp_switch(ckt, [t0,t0+ckt.T], y0, method='BDF', \
+                        jac=ckt.jac, rtol=fun['rtol'], atol=fun['atol'])
+        try:
+            envelope['t'] = np.append(envelope['t'], sol['t'])
+            envelope['y'] = np.append(envelope['y'], sol['y'], axis=1)
+        except:
+            envelope = {key: sol[key] for key in ('t','y')}
 
     labels = [r'$V_C$ (V)', r'$I_L$ (A)']
-    fig,ax = plt.subplots(2,1,sharex=True)
+    fig,ax = plt.subplots(2, 1, sharex=True, figsize=(6,4))
     for i in range(2):
-        ax[i].plot(sol['t']*1e6, sol['y'][i], 'k', lw=1)
-        ax[i].plot(sol_be['t']*1e6, sol_be['y'][i], 'ro-', ms=3)
-        ax[i].plot(sol_trap['t']*1e6, sol_trap['y'][i], 'go-', ms=3)
+        ax[i].plot(envelope['t']*1e6, envelope['y'][i], 'k', lw=1)
         ax[i].set_ylabel(labels[i])
     ax[1].set_xlabel(r'Time ($\mu$s)')
     ax[1].set_xlim(t_span*1e6)
+
+    plt.savefig('buck_envelope.pdf')
+
     plt.show()
 
 
@@ -482,14 +478,14 @@ def shooting_envelope():
     plt.show()
 
 
-cmds = {'system': system, \
+cmds = {'tran': tran, \
         'envelope': envelope, \
         'variational': variational_integration, \
         'variational-envelope': variational_envelope, \
         'shooting': shooting, \
         'shooting-envelope': shooting_envelope}
 
-cmd_descriptions = {'system': 'integrate the buck converter', \
+cmd_descriptions = {'tran': 'integrate the buck converter', \
                     'envelope': 'compute the envelope of the buck converter', \
                     'variational': 'integrate the buck converter and its variational part', \
                     'variational-envelope': 'compute the envelope of the buck converter with variational part', \
