@@ -18,11 +18,12 @@ progname = os.path.basename(sys.argv[0])
 
 F1 = 1e6
 F2 = 2e9
-fun_atol = 1e-6
-fun_rtol = 1e-8
+fun = {'atol': 1e-6, 'rtol': 1e-8}
+env = {'atol': 1e-1, 'rtol': 1e-2, 'max_step': 50, 'vars_to_use': [2,3,5,7]}
+var = {'atol': 1e-1, 'rtol': 1e-2}
 
 
-def init(t_tran=0, atol=fun_atol, rtol=fun_rtol):
+def init(t_tran=0, atol=fun['atol'], rtol=fun['rtol']):
     from scipy.optimize import fsolve
 
     ckt = ASK_OOK()
@@ -48,7 +49,7 @@ def init(t_tran=0, atol=fun_atol, rtol=fun_rtol):
     return ckt,y0
 
 
-def tran():
+def tran(show_plot=True):
     y0_correct = np.array([
         0.,          # ILtl
         0.000162828, # IL1
@@ -65,16 +66,16 @@ def tran():
     print('(FULL CIRCUIT) Initial condition:')
     print('{:>10s} {:>13s} {:>13s}'.format('Variable','Computed','PAN'))
     var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
-    for var,py,pan in zip(var_names,y0,y0_correct):
-        print('{:>10s} = {:13.5e} {:13.5e}'.format(var,py,pan))
+    for name,py,pan in zip(var_names,y0,y0_correct):
+        print('{:>10s} = {:13.5e} {:13.5e}'.format(name,py,pan))
 
     t_span = [0, ckt.T1]
     start = time.time()
     sol = solve_ivp(ckt, t_span, y0, method='BDF', \
-                    jac=ckt.jac, atol=fun_atol, rtol=fun_rtol)
+                    jac=ckt.jac, atol=fun['atol'], rtol=fun['rtol'])
     elapsed = time.time() - start
     print('Elapsed time: {:.2f} sec.'.format(elapsed))
-    pickle.dump(sol, open('ask_ook_tran.pkl', 'wb'))
+    pickle.dump(sol, open('ASK_OOK_tran.pkl', 'wb'))
 
     fig,(ax1,ax2) = plt.subplots(1,2,sharex=True,figsize=(10,4))
     labels = ['i(Ltl)', 'i(L1)', 'i(L2)', \
@@ -91,38 +92,38 @@ def tran():
     ax2.set_ylabel('Voltage (V)')
     ax2.legend(loc='best')
 
-    plt.savefig('ask_ook_tran.pdf')
+    plt.savefig('ASK_OOK_tran.pdf')
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
-def envelope():
+def envelope(show_plot=True):
 
     ckt,y0 = init()
 
     var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
     print('Initial condition for envelope analysis:')
     print('{:>10s} {:>13s}'.format('Variable','Value'))
-    for var,ic in zip(var_names,y0):
-        print('{:>10s} = {:13.5e}'.format(var,ic))
+    for name,ic in zip(var_names,y0):
+        print('{:>10s} = {:13.5e}'.format(name,ic))
 
     t_span = [0, ckt.T1]
-    vars_to_use = [2, 3, 5, 7]
     env_solver = TrapEnvelope(ckt, t_span, y0, max_step=50, \
-                              T_guess=None, T=ckt.T2, vars_to_use=vars_to_use, \
-                              env_rtol=1e-1, env_atol=1e-2, \
+                              T_guess=None, T=ckt.T2, vars_to_use=env['vars_to_use'], \
+                              env_rtol=env['rtol'], env_atol=env['atol'], \
                               solver=solve_ivp, \
                               jac=ckt.jac, method='BDF', \
-                              rtol=fun_rtol, atol=fun_atol)
+                              rtol=fun['rtol'], atol=fun['atol'])
     start = time.time()
     sol_env = env_solver.solve()
     elapsed = time.time() - start
     print('Elapsed time: {:.2f} sec.'.format(elapsed))
-    pickle.dump(sol_env, open('ask_ook_envelope.pkl', 'wb'))
+    pickle.dump(sol_env, open('ASK_OOK_envelope.pkl', 'wb'))
 
     for t0,y0 in zip(sol_env['t'],sol_env['y'].T):
         sol = solve_ivp(ckt, [t0,t0+ckt.T2], y0, method='BDF', \
-                        jac=ckt.jac, rtol=fun_rtol, atol=fun_atol)
+                        jac=ckt.jac, rtol=fun['rtol'], atol=fun['atol'])
         try:
             envelope['t'] = np.append(envelope['t'], sol['t'])
             envelope['y'] = np.append(envelope['y'], sol['y'], axis=1)
@@ -144,12 +145,13 @@ def envelope():
     ax2.set_ylabel('Voltage (V)')
     ax2.legend(loc='best')
 
-    plt.savefig('ask_ook_envelope.pdf')
+    plt.savefig('ASK_OOK_envelope.pdf')
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
-def variational(envelope):
+def variational(envelope, show_plot=True):
     
     ckt,y0 = init()
 
@@ -160,11 +162,12 @@ def variational(envelope):
     print('Initial condition for variational {} analysis:'.format(suffix))
     print('{:>10s} {:>13s}'.format('Variable','Value'))
     var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
-    for var,ic in zip(var_names,y0):
-        print('{:>10s} = {:13.5e}'.format(var,ic))
+    for name,ic in zip(var_names,y0):
+        print('{:>10s} = {:13.5e}'.format(name,ic))
 
     N = ckt.n_dim
     T_large = ckt.T1
+    T_small = ckt.T2
     ckt.with_variational = True
     ckt.variational_T = T_large
 
@@ -172,22 +175,22 @@ def variational(envelope):
     y0_var = np.concatenate((y0,np.eye(N).flatten()))
 
     pkl_file = 'ASK_OOK_variational_{}.pkl'.format(suffix)
-    pkl_file = 'ASK_OOK_variational_{}.pdf'.format(suffix)
+    pdf_file = 'ASK_OOK_variational_{}.pdf'.format(suffix)
 
     if os.path.isfile(pkl_file):
         sol = pickle.load(open(pkl_file, 'rb'))
     else:
         if envelope:
             solver = TrapEnvelope(ckt, [0,T_large], y0, T_guess=None, T=T_small, \
-                                  env_rtol=rtol, env_atol=atol, max_step=50, \
+                                  env_rtol=env['rtol'], env_atol=env['atol'], max_step=env['max_step'], \
                                   is_variational=True, T_var_guess=None, T_var=None, \
-                                  var_rtol=rtol, var_atol=atol, solver=solve_ivp, \
-                                  rtol=fun_rtol, atol=fun_atol, method='BDF')
+                                  var_rtol=var['rtol'], var_atol=var['atol'], solver=solve_ivp, \
+                                  rtol=fun['rtol'], atol=fun['atol'], method='BDF')
             start = time.time()
             sol = solver.solve()
         else:
             start = time.time()
-            sol = solve_ivp(ckt, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
+            sol = solve_ivp(ckt, t_span_var, y0_var, method='BDF', rtol=fun['rtol'], atol=fun['atol'])
         elapsed = time.time() - start
         print('Elapsed time: {:.2f} sec.'.format(elapsed))
         pickle.dump(sol, open(pkl_file, 'wb'))
@@ -211,73 +214,100 @@ def variational(envelope):
 
     plt.savefig(pdf_file)
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
-def shooting():
-    t_tran = 100 / F2
-    fun_atol = 1e-6
-    fun_rtol = 1e-8
-    ckt,sol = init(t_tran, fun_atol, fun_rtol)
+def shooting(envelope, show_plot=True):
 
-    print('Initial condition for transient analysis:')
+    ckt,y0 = init()
+
+    print('Initial condition for shooting analysis:')
     print('{:>10s} {:>13s}'.format('Variable','Value'))
     var_names = ['ILtl', 'IL1', 'IL2', 'out', 'l20', 'l30', 'd10', 'd20']
-    for var,ic in zip(var_names,sol['y'][:,0]):
-        print('{:>10s} = {:13.5e}'.format(var,ic))
+    for name,ic in zip(var_names,y0):
+        print('{:>10s} = {:13.5e}'.format(name,ic))
 
-    y0_guess = sol['y'][:,-1]
     T_large = ckt.T1
     T_small = ckt.T2
 
+    shoot_tol = 1e-2
     estimate_T = False
 
-    shoot = Shooting(ckt, T_large, estimate_T, tol=1e-1, \
-                     solver=solve_ivp, rtol=fun_rtol, atol=fun_atol, \
-                     method='BDF')
+    if envelope:
+        suffix = 'envelope'
+        shoot = EnvelopeShooting(ckt, T_large, estimate_T, T_small, \
+                                 tol=shoot_tol, env_solver=TrapEnvelope, \
+                                 env_rtol=env['rtol'], env_atol=env['atol'], \
+                                 env_max_step=env['max_step'], env_vars_to_use=env['vars_to_use'], \
+                                 var_rtol=var['rtol'], var_atol=var['atol'], \
+                                 fun_solver=solve_ivp, \
+                                 rtol=fun['rtol'], atol=fun['atol'], \
+                                 method='BDF', jac=ckt.jac)
+    else:
+        suffix = 'tran'
+        shoot = Shooting(ckt, T_large, estimate_T, tol=shoot_tol, \
+                         solver=solve_ivp, rtol=fun['rtol'], atol=fun['atol'], \
+                         method='BDF')
 
-    outfile = 'ASK_OOK_shooting.pkl'
-    if os.path.isfile(outfile):
+    pkl_file = 'ASK_OOK_shooting_{}.pkl'.format(suffix)
+    pdf_file = 'ASK_OOK_shooting_{}.pdf'.format(suffix)
+
+    if os.path.isfile(pkl_file):
         sol_shoot = pickle.load(open(outfile,'rb'))
     else:
         now = time.time()
-        sol_shoot = shoot.run(y0_guess)
+        sol_shoot = shoot.run(y0)
         elapsed = time.time() - now
         print('Number of iterations: {}.'.format(sol_shoot['n_iter']))
-        print('Elapsed time: {.2f} sec.'.format(elapsed))
-        pickle.dump(sol_shoot, open(outfile,'wb'))
+        print('Elapsed time: {:.2f} sec.'.format(elapsed))
+        pickle.dump(sol_shoot, open(pkl_file,'wb'))
 
-    fig,ax = plt.subplots(1, 2, sharex=True, figsize=(10,4))
+    jdx = [0,3]
+    fig,ax = plt.subplots(1, len(jdx), sharex=True, figsize=(10,4))
     labels = ['i(Ltl)', 'i(L1)', 'i(L2)', \
               'v(out)', 'v(l20)', 'v(l30)', 'v(d10)', 'v(d20)']
     colors = 'krgbcmy'
-    jdx = [0,3]
     for i,sol in enumerate(sol_shoot['integrations']):
         for n,j in enumerate(jdx):
             ax[n].plot(sol['t'], sol['y'][j], colors[i], lw=1, label=labels[j])
             ax[n].set_xlabel('Time (ns)')
-    ax[0].set_ylabel('Current (A)')
-    ax[1].set_ylabel('Voltage (V)')
     ax[0].legend(loc='best')
     ax[1].legend(loc='best')
 
-    plt.show()
+    plt.savefig(pdf_file)
+
+    if show_plot:
+        plt.show()
 
 
-cmds = {'tran': tran, \
-        'envelope': envelope, \
-        'variational-tran': lambda : variational(False), \
-        'variational-envelope': lambda: variational(True), \
-        'shooting': shooting, \
-        #'shooting-envelope': shooting_envelope
+def run_all():
+    tran(show_plot=False)
+    envelope(show_plot=False)
+    variational(envelope=False, show_plot=False)
+    variational(envelope=True, show_plot=False)
+    shooting(envelope=False, show_plot=False)
+    shooting(envelope=True, show_plot=False)
+
+
+cmds = {
+    'tran': tran, \
+    'envelope': envelope, \
+    'variational': lambda : variational(False), \
+    'variational-envelope': lambda: variational(True), \
+    'shooting': lambda: shooting(False), \
+    'shooting-envelope': lambda: shooting(True), \
+    'run-all': run_all
 }
 
-cmd_descriptions = {'tran': 'integrate the ASK/OOK RF modulator', \
-                    'envelope': 'compute the envelope of the ASK/OOK RF modulator', \
-                    'variational-tran': 'integrate the ASK/OOK modulator and its variational part', \
-                    'variational-envelope': 'compute the envelope of the ASK/OOK modulator with variational part', \
-                    'shooting': 'perform a shooting analysis of the ASK/OOK RF modulator', \
-                    #'shooting-envelope': 'perform a shooting analysis of the buck converter using the envelope'
+cmd_descriptions = {
+    'tran': 'integrate the ASK/OOK RF modulator', \
+    'envelope': 'compute the envelope of the ASK/OOK RF modulator', \
+    'variational': 'integrate the ASK/OOK modulator and its variational part', \
+    'variational-envelope': 'compute the envelope of the ASK/OOK modulator with variational part', \
+    'shooting': 'perform a shooting analysis of the ASK/OOK RF modulator', \
+    'shooting-envelope': 'perform a shooting analysis of the ASK/OOK RF modulator using the envelope', \
+    'run-all': 'run all examples without showing plots'
 }
 
 
@@ -287,7 +317,7 @@ def list_commands():
     for cmd in cmds:
         if len(cmd) > nch:
             nch = len(cmd)
-    fmt = '\t{:<%ds} {}' % (nch + 5)
+    fmt = '   {:<%ds} {}' % (nch + 5)
     for i,cmd in enumerate(cmds):
         print(fmt.format(cmd,cmd_descriptions[cmd]))
 
@@ -310,7 +340,7 @@ if __name__ == '__main__':
     cmd = sys.argv[1]
 
     if not cmd in cmds:
-        print('{}: {}: unknown command.'.format(progname, cmd))
+        print("{}: '{}' is not an accepted command. See '{} --help'.".format(progname, cmd, progname))
         list_commands()
         sys.exit(1)
 
