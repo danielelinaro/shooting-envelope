@@ -25,8 +25,7 @@ def newton_1D(func, x0, fprime):
 def newton(func, x0, fprime, xtol=1e-6, ftol=1e-6, max_step=100, full_output=False):
     x_cur = x0
     f_cur = func(x_cur)
-    if full_output:
-        info = {'nfev': 1, 'njev': 0, 'nstep': 0, 'elapsed': time.time()}
+    info = {'nfev': 1, 'njev': 0, 'nstep': 0, 'elapsed': time.time()}
     while info['nstep'] < max_step:
         x_next = x_cur - inv(fprime(x_cur)) @ f_cur
         f_next = func(x_next)
