@@ -49,7 +49,7 @@ def print_state(y, msg=None):
         print('{:>10s} = {:13.5e}'.format(name,state))
 
 
-def tran():
+def tran(show_plot=True):
     ckt,tran = init()
     t0 = tran['t'][-1]
     y0 = tran['y'][:,-1]
@@ -97,10 +97,11 @@ def tran():
 
     plt.savefig('buck_tran.pdf')
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
-def envelope():
+def envelope(show_plot=True):
     ckt,tran = init()
     t0 = tran['t'][-1]
     y0 = tran['y'][:,-1]
@@ -139,10 +140,11 @@ def envelope():
 
     plt.savefig('buck_envelope.pdf')
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
-def variational(envelope):
+def variational(envelope, show_plot=True):
 
     if envelope:
         suffix = 'envelope'
@@ -215,10 +217,11 @@ def variational(envelope):
 
     plt.savefig('buck_variational_{}.pdf'.format(suffix))
 
-    plt.show()
+    if show_plot:
+        plt.show()
 
 
-def shooting(envelope):
+def shooting(envelope, show_plot=True):
     if envelope:
         suffix = 'envelope'
     else:
@@ -232,8 +235,6 @@ def shooting(envelope):
     N = ckt.n_dim
     T_large = 1/F0
     T_small = ckt.T
-    #ckt.with_variational = True
-    #ckt.variational_T = T_large
     shoot_tol = 1e-3
     estimate_T = False
 
@@ -271,8 +272,20 @@ def shooting(envelope):
     ax[0].set_ylabel(r'$V_C$ (V)')
     ax[1].set_ylabel(r'$I_L$ (A)')
     ax[2].set_ylabel(r'$\int V_o$ $(\mathrm{V}\cdot\mathrm{s})$')
-    plt.savefig('buck_shooting.pdf')
-    plt.show()
+
+    plt.savefig('buck_shooting_{}.pdf'.format(suffix))
+
+    if show_plot:
+        plt.show()
+
+
+def run_all():
+    tran(show_plot=False)
+    envelope(show_plot=False)
+    variational(envelope=False, show_plot=False)
+    variational(envelope=True, show_plot=False)
+    shooting(envelope=False, show_plot=False)
+    shooting(envelope=True, show_plot=False)
 
 
 cmds = {
@@ -282,7 +295,7 @@ cmds = {
     'variational-envelope': lambda: variational(True), \
     'shooting': lambda: shooting(False), \
     'shooting-envelope': lambda: shooting(True), \
-    'spam': shooting_envelope \
+    'all': run_all \
 }
 
 cmd_descriptions = {
@@ -291,7 +304,8 @@ cmd_descriptions = {
     'variational': 'integrate the buck converter and its variational part', \
     'variational-envelope': 'compute the envelope of the buck converter with variational part', \
     'shooting': 'perform a shooting analysis of the buck converter', \
-    'shooting-envelope': 'perform a shooting analysis of the buck converter using the envelope'
+    'shooting-envelope': 'perform a shooting analysis of the buck converter using the envelope', \
+    'all': 'run all examples without showing plots'
 }
 
 

@@ -297,7 +297,7 @@ cmds = {
     'variational-envelope': lambda: variational(True), \
     'shooting': lambda: shooting(False), \
     'shooting-envelope': lambda: shooting(True), \
-    'run-all': run_all
+    'all': run_all
 }
 
 cmd_descriptions = {
@@ -307,7 +307,7 @@ cmd_descriptions = {
     'variational-envelope': 'compute the envelope of the ASK/OOK modulator with variational part', \
     'shooting': 'perform a shooting analysis of the ASK/OOK RF modulator', \
     'shooting-envelope': 'perform a shooting analysis of the ASK/OOK RF modulator using the envelope', \
-    'run-all': 'run all examples without showing plots'
+    'all': 'run all examples without showing plots'
 }
 
 
