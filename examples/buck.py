@@ -16,7 +16,7 @@ pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=
 progname = os.path.basename(sys.argv[0])
 
 # circuit parameters
-T = 50e-7
+T = 50e-6
 Vref = 10
 kp = 0.1
 ki = 10
@@ -27,7 +27,7 @@ def Vin(t, Vin0=20, dVin=1, F=F0):
     return Vin0 + dVin * np.sin(2*np.pi*F*t)
 
 # simulation parameters
-fun = {'rtol': 1e-10, 'atol': 1e-12}
+fun = {'rtol': 1e-6, 'atol': 1e-8}
 env = {'rtol': 1e-2, 'atol': 1e-4, 'max_step': 100, 'vars_to_use': [0,1]}
 var = {'rtol': 1e-2, 'atol': 1e-4}
 
@@ -218,63 +218,54 @@ def variational(envelope):
     plt.show()
 
 
-def shooting():
-    T = 50e-7
-    Vref = 10
-    kp = 0.1
-    ki = 10
-    R = 6
+def shooting(envelope):
+    if envelope:
+        suffix = 'envelope'
+    else:
+        suffix = 'tran'
 
-    fun_rtol = 1e-6
-    fun_atol = 1e-8
+    ckt,tran = init(10*T)
+    y0 = tran['y'][:,-1]
 
-    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
-    N = buck.n_dim
+    print_state(y0, 'Initial condition for shooting {} analysis:'.format(suffix))
 
-    y0_guess = np.array([Vin(0),1,0])
-
-    t_tran = 10*T
-
-    if t_tran > 0:
-        tran = solve_ivp_switch(buck, [0,t_tran], y0_guess, method='BDF', \
-                                jac=buck.jac, rtol=fun_rtol, atol=fun_atol)
-        y0_guess = tran['y'][:,-1]
-        #fig,(ax1,ax2) = plt.subplots(2,1,sharex=True)
-        #ax1.plot(tran['t']/T,tran['y'][0],'k')
-        #ax1.set_ylabel(r'$V_C$ (V)')
-        #ax2.plot(tran['t']/T,tran['y'][1],'k')
-        #ax2.set_xlabel('No. of periods')
-        #ax2.set_ylabel(r'$I_L$ (A)')
-        #plt.show()
-
+    N = ckt.n_dim
     T_large = 1/F0
-    T_small = T
-
+    T_small = ckt.T
+    #ckt.with_variational = True
+    #ckt.variational_T = T_large
+    shoot_tol = 1e-3
     estimate_T = False
 
-    shoot = Shooting(buck, T_large, estimate_T, tol=1e-3, \
-                     solver=solve_ivp_switch, \
-                     rtol=fun_rtol, atol=fun_atol, \
-                     method='BDF')
+    if envelope:
+        shoot = EnvelopeShooting(ckt, T_large, estimate_T, T_small, \
+                                 tol=shoot_tol, env_solver=TrapEnvelope, \
+                                 env_rtol=env['rtol'], env_atol=env['atol'], \
+                                 env_max_step=env['max_step'], \
+                                 env_vars_to_use=env['vars_to_use'], \
+                                 var_rtol=var['rtol'], var_atol=var['atol'], \
+                                 fun_solver=solve_ivp_switch, \
+                                 rtol=fun['rtol'], atol=fun['atol'], \
+                                 method='BDF', jac=ckt.jac)
+    else:
+        shoot = Shooting(ckt, T_large, estimate_T, tol=shoot_tol, \
+                         solver=solve_ivp_switch, \
+                         rtol=fun['rtol'], atol=fun['atol'], \
+                         method='BDF')
 
     now = time.time()
-    sol_shoot = shoot.run(y0_guess)
+    sol_shoot = shoot.run(y0)
     elapsed = time.time() - now
     print('Number of iterations: %d.' % sol_shoot['n_iter'])
     print('Elapsed time: %7.3f sec.' % elapsed)
 
-    col = 'krgbcmy'
     lw = 0.8
     fig,ax = plt.subplots(3,1,sharex=True,figsize=(6,6))
 
     for i,integr in enumerate(sol_shoot['integrations']):
-
         y0 = integr['y'][:N,0]
-        y0_var = np.concatenate((y0,np.eye(N).flatten()))
-
         for j in range(3):
-            #ax[j].plot(sol['t'],sol['y'][j],col[i],lw=lw,label='Iter #%d' % (i+1))
-            ax[j].plot(integr['t'],integr['y'][j],col[i],lw=lw,label='Iter #%d' % (i+1))
+            ax[j].plot(integr['t'], integr['y'][j], lw=lw, label='Iter #%d' % (i+1))
     ax[2].set_xlabel('Normalized time')
     ax[0].legend(loc='best')
     ax[0].set_ylabel(r'$V_C$ (V)')
@@ -284,87 +275,14 @@ def shooting():
     plt.show()
 
 
-def shooting_envelope():
-    T = 50e-7
-    Vref = 10
-    kp = 0.1
-    ki = 10
-    R = 6
-
-    fun_rtol = 1e-6
-    fun_atol = 1e-8
-
-    buck = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
-    N = buck.n_dim
-
-    y0_guess = np.array([Vin(0),1,0])
-
-    t_tran = 10*T
-
-    if t_tran > 0:
-        tran = solve_ivp_switch(buck, [0,t_tran], y0_guess, method='BDF', \
-                                jac=buck.jac, rtol=fun_rtol, atol=fun_atol)
-        y0_guess = tran['y'][:,-1]
-        #fig,(ax1,ax2) = plt.subplots(2,1,sharex=True)
-        #ax1.plot(tran['t']/T,tran['y'][0],'k')
-        #ax1.set_ylabel(r'$V_C$ (V)')
-        #ax2.plot(tran['t']/T,tran['y'][1],'k')
-        #ax2.set_xlabel('No. of periods')
-        #ax2.set_ylabel(r'$I_L$ (A)')
-        #plt.show()
-
-    T_large = 1/F0
-    T_small = T
-
-    estimate_T = False
-
-    shoot = EnvelopeShooting(buck, T_large, estimate_T, T_small, \
-                             tol=1e-3, env_solver=TrapEnvelope, \
-                             env_rtol=1e-3, env_atol=1e-4, \
-                             env_max_step=150, env_vars_to_use=[0,1], \
-                             var_rtol=1e-1, var_atol=1e-2, \
-                             fun_solver=solve_ivp_switch, \
-                             rtol=fun_rtol, atol=fun_atol, \
-                             method='BDF', jac=buck.jac)
-    now = time.time()
-    sol_shoot = shoot.run(y0_guess)
-    elapsed = time.time() - now
-    print('Number of iterations: %d.' % sol_shoot['n_iter'])
-    print('Elapsed time: %7.3f sec.' % elapsed)
-
-    t_span_var = [0,1]
-    buck.with_variational = True
-    buck.variational_T = T_large
-
-    col = 'krgbcmy'
-    lw = 0.8
-    fig,ax = plt.subplots(3,1,sharex=True,figsize=(6,6))
-
-    for i,integr in enumerate(sol_shoot['integrations']):
-
-        y0 = integr['y'][:N,0]
-        y0_var = np.concatenate((y0,np.eye(N).flatten()))
-        sol = solve_ivp_switch(buck, t_span_var, y0_var, method='BDF', rtol=fun_rtol, atol=fun_atol)
-
-        for j in range(3):
-            ax[j].plot(sol['t'],sol['y'][j],col[i],lw=lw,label='Iter #%d' % (i+1))
-            ax[j].plot(integr['t'],integr['y'][j],col[i]+'o-',lw=1,ms=3)
-    ax[2].set_xlabel('Normalized time')
-    ax[0].legend(loc='best')
-    ax[0].set_ylabel(r'$V_C$ (V)')
-    ax[1].set_ylabel(r'$I_L$ (A)')
-    ax[2].set_ylabel(r'$\int V_o$ $(\mathrm{V}\cdot\mathrm{s})$')
-    plt.savefig('buck_shooting_envelope.pdf')
-    plt.show()
-
-
 cmds = {
     'tran': tran, \
     'envelope': envelope, \
     'variational': lambda: variational(False), \
     'variational-envelope': lambda: variational(True), \
-    'shooting': shooting, \
-    'shooting-envelope': shooting_envelope \
+    'shooting': lambda: shooting(False), \
+    'shooting-envelope': lambda: shooting(True), \
+    'spam': shooting_envelope \
 }
 
 cmd_descriptions = {
