@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
@@ -22,9 +23,11 @@ kp = 0.1
 ki = 10
 R = 6
 
+Vin0 = 20
+dVin = 1
 F0 = 100
-def Vin(t, Vin0=20, dVin=1, F=F0):
-    return Vin0 + dVin * np.sin(2*np.pi*F*t)
+def Vin(t, V0=Vin0, dV=dVin, F=F0):
+    return V0 + dV * np.sin(2*np.pi*F*t)
 
 # simulation parameters
 fun = {'rtol': 1e-6, 'atol': 1e-8}
@@ -32,7 +35,7 @@ env = {'rtol': 1e-2, 'atol': 1e-4, 'max_step': 100, 'vars_to_use': [0,1]}
 var = {'rtol': 1e-2, 'atol': 1e-4}
 
 
-def init(t_tran=10*T, y0=np.array([Vin(0),1,0]), rtol=fun['rtol'], atol=fun['atol']):
+def init(T=T, t_tran=10*T, y0=np.array([12,3,0]), rtol=fun['rtol'], atol=fun['atol']):
     ckt = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
     sol = solve_ivp_switch(ckt, [0,t_tran], y0, \
                            method='BDF', jac=ckt.jac, \
@@ -49,19 +52,45 @@ def print_state(y, msg=None):
         print('{:>10s} = {:13.5e}'.format(name,state))
 
 
+def dump_data(outfile, **kwargs):
+    data = {'T': T, 'Vref': Vref, 'kp': kp, 'ki': ki, \
+            'R': R, 'Vin0': Vin0, 'dVin': dVin, 'F0': F0}
+    for k,v in kwargs.items():
+        data[k] = v
+    pickle.dump(data, open(outfile, 'wb'))
+
+
+def make_full_envelope_solution(ckt, sol_env, T):
+    for t0,y0 in zip(sol_env['t'],sol_env['y'].T):
+        if ckt.with_variational:
+            sol = solve_ivp_switch(ckt, [t0,t0+T], y0, method='BDF', \
+                                   rtol=fun['rtol'], atol=fun['atol'])
+        else:
+            sol = solve_ivp_switch(ckt, [t0,t0+T], y0, method='BDF', \
+                                   jac=ckt.jac, rtol=fun['rtol'], atol=fun['atol'])
+        try:
+            envelope['t'] = np.append(envelope['t'], sol['t'])
+            envelope['y'] = np.append(envelope['y'], sol['y'], axis=1)
+        except:
+            envelope = {key: sol[key] for key in ('t','y')}
+    return envelope
+
+
 def tran(show_plot=True):
     ckt,tran = init()
     t0 = tran['t'][-1]
     y0 = tran['y'][:,-1]
 
     print_state(y0, 'Initial condition for transient analysis:')
-    t_span = t0 + np.array([0, 10/F0])
+    t_span = t0 + np.array([0, 2/F0])
     start = time.time()
     sol = solve_ivp_switch(ckt, t_span, y0, \
                            method='BDF', jac=ckt.jac, \
                            rtol=fun['rtol'], atol=fun['atol'])
     elapsed = time.time() - start
     print('Elapsed time: {:.2f} sec.'.format(elapsed))
+    dump_data('buck_tran.pkl', sol=sol, t0=t0, y0=y0, \
+              elapsed_time=elapsed, sys_pars=fun, t_span=t_span)
 
     show_manifold = True
     if show_manifold:
@@ -108,7 +137,7 @@ def envelope(show_plot=True):
 
     print_state(y0, 'Initial condition for envelope analysis:')
 
-    t_span = t0 + np.array([0, 10/F0])
+    t_span = t0 + np.array([0, 2/F0])
 
     env_solver = TrapEnvelope(ckt, t_span, y0, max_step=env['max_step'], \
                               T_guess=None, T=T, vars_to_use=env['vars_to_use'], \
@@ -121,14 +150,11 @@ def envelope(show_plot=True):
     elapsed = time.time() - start
     print('Elapsed time: {:.2f} sec.'.format(elapsed))
 
-    for t0,y0 in zip(sol_env['t'],sol_env['y'].T):
-        sol = solve_ivp_switch(ckt, [t0,t0+ckt.T], y0, method='BDF', \
-                        jac=ckt.jac, rtol=fun['rtol'], atol=fun['atol'])
-        try:
-            envelope['t'] = np.append(envelope['t'], sol['t'])
-            envelope['y'] = np.append(envelope['y'], sol['y'], axis=1)
-        except:
-            envelope = {key: sol[key] for key in ('t','y')}
+    envelope = make_full_envelope_solution(ckt, sol_env, ckt.T)
+
+    dump_data('buck_envelope.pkl', sol=sol_env, full_sol=envelope, \
+              t0=t0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
+              env_pars=env, t_span=t_span)
 
     labels = [r'$V_C$ (V)', r'$I_L$ (A)']
     fig,ax = plt.subplots(2, 1, sharex=True, figsize=(6,4))
@@ -151,7 +177,7 @@ def variational(envelope, show_plot=True):
     else:
         suffix = 'tran'
 
-    ckt,tran = init(10*T)
+    ckt,tran = init(t_tran=50e-5)
     y0 = tran['y'][:,-1]
 
     print_state(y0, 'Initial condition for variational {} analysis:'.format(suffix))
@@ -173,6 +199,7 @@ def variational(envelope, show_plot=True):
                                   var_rtol=var['rtol'], var_atol=var['atol'], \
                                   solver=solve_ivp_switch, \
                                   rtol=fun['rtol'], atol=fun['atol'], method='BDF')
+        env_solver.verbose = False
         now = time.time()
         sol = env_solver.solve()
     else:
@@ -190,6 +217,17 @@ def variational(envelope, show_plot=True):
         else:
             sign = '+'
         print('   {:9.2e} {} j {:8.2e}'.format(np.real(w[i]),sign,np.abs(np.imag(w[i]))))
+
+    if envelope:
+        full_sol = make_full_envelope_solution(ckt, sol, T_small/T_large)
+        dump_data('buck_variational_envelope.pkl', sol=sol, full_sol=full_sol, \
+                  t0=0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
+                  env_pars=env, var_pars=var, T_large=T_large, T_small=T_small)
+        sol = full_sol
+    else:
+        dump_data('buck_variational_tran.pkl', sol=sol, \
+                  t0=0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
+                  T_large=T_large, T_small=T_small)
 
     from matplotlib.ticker import ScalarFormatter
     formatter = ScalarFormatter()
@@ -221,13 +259,17 @@ def variational(envelope, show_plot=True):
         plt.show()
 
 
-def shooting(envelope, show_plot=True):
+def shooting(envelope, T=T, outfile='', show_plot=True):
     if envelope:
         suffix = 'envelope'
     else:
         suffix = 'tran'
 
-    ckt,tran = init(10*T)
+    if outfile == '':
+        outfile = 'buck_shooting_{}.pkl'.format(suffix)
+    pdffile = os.path.splitext(outfile)[0] + '.pdf'
+
+    ckt,tran = init(T=T, t_tran=50e-5)
     y0 = tran['y'][:,-1]
 
     print_state(y0, 'Initial condition for shooting {} analysis:'.format(suffix))
@@ -248,6 +290,7 @@ def shooting(envelope, show_plot=True):
                                  fun_solver=solve_ivp_switch, \
                                  rtol=fun['rtol'], atol=fun['atol'], \
                                  method='BDF', jac=ckt.jac)
+        shoot.verbose = False
     else:
         shoot = Shooting(ckt, T_large, estimate_T, tol=shoot_tol, \
                          solver=solve_ivp_switch, \
@@ -255,15 +298,30 @@ def shooting(envelope, show_plot=True):
                          method='BDF')
 
     now = time.time()
-    sol_shoot = shoot.run(y0)
+    sol = shoot.run(y0)
     elapsed = time.time() - now
-    print('Number of iterations: %d.' % sol_shoot['n_iter'])
+    print('Number of iterations: %d.' % sol['n_iter'])
     print('Elapsed time: %7.3f sec.' % elapsed)
+
+    if envelope:
+        ckt.with_variational = True
+        full_sol = []
+        for integr in sol['integrations']:
+            full_sol.append(make_full_envelope_solution(ckt, integr, T_small/T_large))
+        dump_data(outfile, sol=sol, full_sol=full_sol, \
+                  t0=0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
+                  env_pars=env, shoot_tol=shoot_tol, var_pars=var, \
+                  T_large=T_large, T_small=T_small)
+        sol['integrations'] = full_sol
+    else:
+        dump_data(outfile, sol=sol, \
+                  t0=0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
+                  shoot_tol=shoot_tol, T_large=T_large, T_small=T_small)
 
     lw = 0.8
     fig,ax = plt.subplots(3,1,sharex=True,figsize=(6,6))
 
-    for i,integr in enumerate(sol_shoot['integrations']):
+    for i,integr in enumerate(sol['integrations']):
         y0 = integr['y'][:N,0]
         for j in range(3):
             ax[j].plot(integr['t'], integr['y'][j], lw=lw, label='Iter #%d' % (i+1))
@@ -273,10 +331,20 @@ def shooting(envelope, show_plot=True):
     ax[1].set_ylabel(r'$I_L$ (A)')
     ax[2].set_ylabel(r'$\int V_o$ $(\mathrm{V}\cdot\mathrm{s})$')
 
-    plt.savefig('buck_shooting_{}.pdf'.format(suffix))
+    plt.savefig(pdffile)
 
     if show_plot:
         plt.show()
+
+
+def shooting_comparison():
+    if len(sys.argv) != 3:
+        print('Usage: {} shooting-comparison T'.format(os.path.basename(sys.argv[0])))
+        sys.exit(0)
+    T = float(sys.argv[2])
+    fmt = 'buck_shooting_{}_T={:6.1e}.pkl'.format('{}',T)
+    shooting(envelope=False, T=T, outfile=fmt.format('tran'), show_plot=False)
+    shooting(envelope=True, T=T, outfile=fmt.format('envelope'), show_plot=False)
 
 
 def run_all():
@@ -291,10 +359,11 @@ def run_all():
 cmds = {
     'tran': tran, \
     'envelope': envelope, \
-    'variational': lambda: variational(False), \
-    'variational-envelope': lambda: variational(True), \
-    'shooting': lambda: shooting(False), \
-    'shooting-envelope': lambda: shooting(True), \
+    'variational': lambda: variational(envelope=False), \
+    'variational-envelope': lambda: variational(envelope=True), \
+    'shooting': lambda: shooting(envelope=False), \
+    'shooting-envelope': lambda: shooting(envelope=True), \
+    'shooting-comparison': shooting_comparison, \
     'all': run_all \
 }
 
@@ -305,6 +374,7 @@ cmd_descriptions = {
     'variational-envelope': 'compute the envelope of the buck converter with variational part', \
     'shooting': 'perform a shooting analysis of the buck converter', \
     'shooting-envelope': 'perform a shooting analysis of the buck converter using the envelope', \
+    'shooting-comparison': 'compare traditional and envelope-accelereated shooting analyses', \
     'all': 'run all examples without showing plots'
 }
 
@@ -327,7 +397,7 @@ def usage():
 
 if __name__ == '__main__':
 
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         usage()
         sys.exit(1)
 

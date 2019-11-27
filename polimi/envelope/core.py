@@ -4,16 +4,10 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 
+from .. import utils
 from .. import switching
 from ..solvers import newton
-
-DEBUG = True
-if DEBUG:
-    from .. import utils
-    colors = utils.ColorFactory()
-
-NEWTON_FTOL = 1e-3
-NEWTON_XTOL = 1e-1
+colors = utils.ColorFactory()
 
 __all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope']
 
@@ -23,7 +17,7 @@ class EnvelopeSolver (object):
     SUCCESS = 0
     DT_TOO_LARGE = 1
     LTE_TOO_LARGE = 2
-    
+
 
     def __init__(self, system, t_span, y0, T_guess=None, T=None,
                  max_step=1000, integer_steps=True,
@@ -32,6 +26,10 @@ class EnvelopeSolver (object):
                  T_var_guess=None, var_rtol=1e-2, var_atol=1e-3,
                  solver=solve_ivp, **kwargs):
 
+        # by default be verbose
+        self._verbose = True
+        # Newton tolerances
+        self._newton_ftol,self._newton_xtol = 1e-3,1e-1
         # the dynamical system
         self.system = system
         # tolerances for the computation of the envelope
@@ -107,7 +105,8 @@ class EnvelopeSolver (object):
                 self.compute_variational_LTE = False
                 self.estimate_T_var = False
                 self.T_var = -1
-                print('EnvelopeSolver.__init__(%.4e)> will not compute variational LTE.' % 0)
+                if self.verbose:
+                    print('EnvelopeSolver.__init__(%.4e)> will not compute variational LTE.' % 0)
             self.t_span = [0,1]
             self.monodromy_matrices = []
             self.t_var = []
@@ -120,11 +119,39 @@ class EnvelopeSolver (object):
 
         # period of the fast system during the envelope integration
         self.period = [self.T]
-        if DEBUG:
+        if self.verbose:
             if self.is_variational:
                 print('EnvelopeSolver.__init__(%.4e)> T = %.3e T_var = %.3e' % (self.t_span[0],self.T,self.T_var))
             else:
                 print('EnvelopeSolver.__init__(%.4e)> T = %.3e' % (self.t_span[0],self.T))
+
+
+    @property
+    def verbose(self):
+        return self._verbose
+    @verbose.setter
+    def verbose(self, v):
+        self._verbose = v
+
+
+    @property
+    def newton_xtol(self):
+        return self._newton_xtol
+    @newton_xtol.setter
+    def newton_xtol(self, v):
+        if v <= 0:
+            raise 'Newton tolerance on variables must be > 0'
+        self._newton_xtol = v
+
+
+    @property
+    def newton_ftol(self):
+        return self._newton_ftol
+    @newton_ftol.setter
+    def newton_ftol(self, v):
+        if v <= 0:
+            raise 'Newton tolerance on function value must be > 0'
+        self._newton_ftol = v
 
 
     def solve(self):
@@ -164,7 +191,7 @@ class EnvelopeSolver (object):
                 msg += ' 1T'
             self.H = self.H_new
 
-            if DEBUG:
+            if self.verbose:
                 t_cur = self.t[-1]
                 if msg != 'LTE':
                     H = np.diff(self.t[-2:])[0]
@@ -395,7 +422,7 @@ class EnvelopeSolver (object):
             T = sol['t_events'][0][idx[0]] - t
         except:
             T = T_guess
-            if DEBUG:
+            if self.verbose:
                 print('EnvelopeSolver._envelope_fun(%.4e)> T = T_guess = %.3e.' % (t,T))
 
         self.T_new = T
@@ -521,7 +548,7 @@ class BEEnvelope (EnvelopeSolver):
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
         return newton(lambda Y: Y - y_cur - H * self._envelope_fun(t_next,Y), y_guess, \
                       fprime=lambda Y: self._envelope_jac(t_next,Y,H), \
-                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL, max_step=1)
+                      xtol=self.newton_xtol, ftol=self.newton_ftol, max_step=1)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):
@@ -580,7 +607,7 @@ class TrapEnvelope (EnvelopeSolver):
     def _compute_y_next(self, y_cur, f_cur, t_next, H, y_guess):
         return newton(lambda Y: Y - y_cur - H/2 * (f_cur + self._envelope_fun(t_next,Y)), \
                       y_guess, fprime=lambda Y: self._envelope_jac(t_next,Y,H), \
-                      xtol=NEWTON_XTOL, ftol=NEWTON_FTOL, max_step=1)
+                      xtol=self.newton_xtol, ftol=self.newton_ftol, max_step=1)
 
 
     def _compute_LTE(self, H, f_next, f_cur, y_next, y_cur):

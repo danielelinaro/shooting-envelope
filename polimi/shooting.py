@@ -107,6 +107,15 @@ class EnvelopeShooting (BaseShooting):
         self.env_solver = env_solver
         self.fun_solver = fun_solver
         self.fun_kwargs = kwargs
+        self.verbose = True
+
+
+    @property
+    def verbose(self):
+        return self._verbose
+    @verbose.setter
+    def verbose(self, v):
+        self._verbose = v
 
 
     def _integrate(self, y0):
@@ -120,6 +129,7 @@ class EnvelopeShooting (BaseShooting):
                                  T_var=self.T_var, var_rtol=self.var_rtol, \
                                  var_atol=self.var_atol, solver=self.fun_solver, \
                                  **self.fun_kwargs)
+        solver.verbose = self.verbose
         sol = solver.solve()
         self.system.with_variational = with_variational
         return sol
