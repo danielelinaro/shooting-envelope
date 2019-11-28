@@ -150,16 +150,16 @@ def envelope(show_plot=True):
     elapsed = time.time() - start
     print('Elapsed time: {:.2f} sec.'.format(elapsed))
 
-    envelope = make_full_envelope_solution(ckt, sol_env, ckt.T)
+    full_sol_env = make_full_envelope_solution(ckt, sol_env, ckt.T)
 
-    dump_data('buck_envelope.pkl', sol=sol_env, full_sol=envelope, \
+    dump_data('buck_envelope.pkl', sol=sol_env, full_sol=full_sol_env, \
               t0=t0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
               env_pars=env, t_span=t_span)
 
     labels = [r'$V_C$ (V)', r'$I_L$ (A)']
     fig,ax = plt.subplots(2, 1, sharex=True, figsize=(6,4))
     for i in range(2):
-        ax[i].plot(envelope['t']*1e6, envelope['y'][i], 'k', lw=1)
+        ax[i].plot(full_sol_env['t']*1e6, full_sol_env['y'][i], 'k', lw=1)
         ax[i].set_ylabel(labels[i])
     ax[1].set_xlabel(r'Time ($\mu$s)')
     ax[1].set_xlim(t_span*1e6)

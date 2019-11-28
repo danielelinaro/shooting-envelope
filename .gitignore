@@ -17,4 +17,6 @@ __pycache__
 Newton.ipynb
 *.log
 *.raw
+*.pkl
+*_SIMULATIONS
 .pan
