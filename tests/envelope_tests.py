@@ -126,53 +126,59 @@ def HR():
     y0 = [0,1,0.1]
     #y0 = np.array([-0.85477615, -3.03356705,  4.73029393])
     t_tran = 100
-    sol = solve_ivp(hr, [0,t_tran], y0, method='RK45', rtol=1e-8, atol=1e-10)
+    rtol = 1e-6
+    atol = 1e-8
+    sol = solve_ivp(hr, [0,t_tran], y0, method='BDF', jac=hr.jac, rtol=rtol, atol=atol)
     y0 = sol['y'][:,-1]
 
-    t_span = [0,5000]
+    t_span = [0,500]
     T_guess = 11
 
     be_solver = BEEnvelope(hr, t_span, y0, T_guess=T_guess, \
-                           max_step=500, integer_steps=False, \
-                           env_rtol=1e-3, env_atol=1e-6, \
-                           rtol=1e-8, atol=1e-10)
+                           max_step=500, integer_steps=True, \
+                           env_rtol=1e-3, env_atol=1e-4, \
+                           solver=solve_ivp, method='BDF', jac=hr.jac, \
+                           rtol=rtol, atol=atol)
     trap_solver = TrapEnvelope(hr, t_span, y0, T_guess=T_guess, \
-                               max_steps=500, integer_steps=True, \
-                               env_rtol=1e-3, env_atol=1e-6, \
-                               rtol=1e-8, atol=1e-10)
+                               max_step=500, integer_steps=True, \
+                               env_rtol=1e-3, env_atol=1e-4, \
+                               solver=solve_ivp, method='BDF', jac=hr.jac, \
+                               rtol=rtol, atol=atol)
+    trap_solver.verbose = True
 
-    print('-' * 81)
-    sol_be = be_solver.solve()
+    #print('-' * 81)
+    #sol_be = be_solver.solve()
     print('-' * 81)
     sol_trap = trap_solver.solve()
     print('-' * 81)
-    sol = solve_ivp(hr, t_span, y0, method='RK45', rtol=1e-8, atol=1e-10)
+    sol = solve_ivp(hr, [t_span[0], sol_trap['t'][-1]], y0, method='BDF', \
+                    jac=hr.jac, rtol=rtol, atol=atol)
 
     fig,(ax1,ax2) = plt.subplots(1, 2, figsize=(10,6))
     ax1.plot(sol['t'],sol['y'][0],'k')
-    for t0,y0,T in zip(sol_be['t'],sol_be['y'].T,sol_be['T']):
-        period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
-        ax1.plot(period['t'], period['y'][0], color=[1,.6,.6], lw=1)
+    #for t0,y0,T in zip(sol_be['t'],sol_be['y'].T,sol_be['T']):
+    #    period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=rtol, atol=atol)
+    #    ax1.plot(period['t'], period['y'][0], color=[1,.6,.6], lw=1)
     for t0,y0,T in zip(sol_trap['t'],sol_trap['y'].T,sol_trap['T']):
-        period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
+        period = solve_ivp(hr, [t0,t0+T], y0, method='BDF', rtol=rtol, atol=atol)
         ax1.plot(period['t'], period['y'][0], color=[.6,1,.6], lw=1)
-    ax1.plot(sol_be['t'],sol_be['y'][0],'ro-')
+    #ax1.plot(sol_be['t'],sol_be['y'][0],'ro-')
     ax1.plot(sol_trap['t'],sol_trap['y'][0],'go-')
-    ax1.plot(sol_be['t'],sol_be['T'],'ms-')
+    ax1.plot(sol_trap['t'],sol_trap['T'],'mo-')
     ax1.set_xlabel('t')
     ax1.set_ylabel('y')
 
-    idx, = np.where(sol['t'] > 1000)
-    ax2.plot(sol['y'][0,idx],sol['y'][1,idx],'k')
-    for t0,y0,T in zip(sol_be['t'],sol_be['y'].T,sol_be['T']):
-        if t0 < 1000:
-            continue
-        period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
-        ax2.plot(period['y'][0], period['y'][1], color=[1,.6,.6], lw=1)
-    idx, = np.where(sol_be['t'] > 1000)
-    ax2.plot(sol_be['y'][0,idx],sol_be['y'][1,idx],'ro-')
-    ax2.set_xlabel('x')
-    ax2.set_ylabel('y')
+    #idx, = np.where(sol['t'] > 1000)
+    #ax2.plot(sol['y'][0,idx],sol_trap['y'][1,idx],'k')
+    #for t0,y0,T in zip(sol_trap['t'],sol_be['y'].T,sol_be['T']):
+    #    if t0 < 1000:
+    #        continue
+    #    period = solve_ivp(hr, [t0,t0+T], y0, method='RK45', rtol=1e-8, atol=1e-10)
+    #    ax2.plot(period['y'][0], period['y'][1], color=[1,.6,.6], lw=1)
+    #idx, = np.where(sol_be['t'] > 1000)
+    #ax2.plot(sol_trap['y'][0,idx],sol_trap['y'][1,idx],'ro-')
+    #ax2.set_xlabel('x')
+    #ax2.set_ylabel('y')
 
     plt.show()
 
@@ -181,7 +187,7 @@ def main():
     import polimi.utils
     polimi.utils.set_rc_defaults()
 
-    autonomous()
+    #autonomous()
     HR()
 
 

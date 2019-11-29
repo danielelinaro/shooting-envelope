@@ -268,8 +268,8 @@ class EnvelopeSolver (object):
         y_cur = self.y[:,-1]
         f_cur = self.f[:,-1]
 
-        if t_cur + H > self.t_span[1]:
-            H = self.T * np.max((1,np.floor((self.t_span[1] - t_cur) / self.T)))
+        if t_cur + H > self.t_span[1] + self.T:
+            H = self.T * np.max((1,np.floor((self.t_span[1] + self.T - t_cur) / self.T)))
         t_next = t_cur + H
 
         # step size in units of period
@@ -323,8 +323,8 @@ class EnvelopeSolver (object):
 
         # compute the new value of H as the maximum value that allows having an LTE below threshold
         self.H_new = self._compute_next_H(scale, coeff, T)
-        if t_next + self.H_new > self.t_span[1]:
-            self.H_new = self.T * np.floor((self.t_span[1] - t_next) / self.T)
+        if t_next + self.H_new > self.t_span[1] + self.T:
+            self.H_new = self.T * np.floor((self.t_span[1] + self.T - t_next) / self.T)
 
         if self.is_variational and self.compute_variational_LTE and n_periods_var > 1:
             self.H_new = np.min((self.H_new, np.floor(H_new_var / T) * T))
@@ -415,9 +415,10 @@ class EnvelopeSolver (object):
 
         if T_guess is None:
             T_guess = self.T
+
         # find the equation of the plane containing y and
         # orthogonal to fun(t,y)
-        f = self.system(t,y)
+        f = self.system(t,y_ext)
         w = f[self.vars_to_use] / np.linalg.norm(f[self.vars_to_use])
         b = -np.dot(w, y[self.vars_to_use])
 
@@ -437,8 +438,6 @@ class EnvelopeSolver (object):
             T = sol['t_events'][0][idx[0]] - t
         except:
             T = T_guess
-            if self.verbose:
-                print('EnvelopeSolver._envelope_fun(%.4e)> T = T_guess = %.3e.' % (t,T))
 
         self.T_new = T
         self.t_new = t + self.T_new
@@ -446,7 +445,7 @@ class EnvelopeSolver (object):
         self.y_new = Y[:n_dim]
         self._last_envelope_fun_call['phi'] = np.reshape(Y[n_dim:],(n_dim,n_dim)).copy()
         # return the "vector field" of the envelope
-        return 1./self.T_new * (self.y_new - sol['sol'](t))
+        return 1./self.T_new * (self.y_new - y)
 
 
     def _get_stored_monodromy_matrix(self, t, y):

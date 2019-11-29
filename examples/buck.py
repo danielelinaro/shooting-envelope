@@ -61,7 +61,7 @@ def dump_data(outfile, **kwargs):
 
 
 def make_full_envelope_solution(ckt, sol_env, T):
-    for t0,y0 in zip(sol_env['t'],sol_env['y'].T):
+    for t0,y0 in zip(sol_env['t'][:-1],sol_env['y'][:,:-1].T):
         if ckt.with_variational:
             sol = solve_ivp_switch(ckt, [t0,t0+T], y0, method='BDF', \
                                    rtol=fun['rtol'], atol=fun['atol'])
@@ -73,6 +73,8 @@ def make_full_envelope_solution(ckt, sol_env, T):
             envelope['y'] = np.append(envelope['y'], sol['y'], axis=1)
         except:
             envelope = {key: sol[key] for key in ('t','y')}
+    envelope['t'] = np.append(envelope['t'], sol_env['t'][-1])
+    envelope['y'] = np.append(envelope['y'], np.reshape(sol_env['y'][:,-1], (3,1)), axis=1)
     return envelope
 
 
