@@ -222,17 +222,10 @@ class Buck (SwitchingSystem):
 
         self._make_matrixes()
 
-        self.event_functions = [lambda t,y: Buck.manifold(self, t*self.variational_T, y),
-                                lambda t,y: Buck.clock(self, t*self.variational_T, y)]
-        for event_fun in self._event_functions:
-            event_fun.direction = 1
-            event_fun.terminal = 1
-
-        self.event_derivatives = [lambda t,y: Buck.manifold_der(self, t*self.variational_T, y),
-                                  lambda t,y: Buck.clock_der(self, t*self.variational_T, y)]
-
-        self.event_gradients = [lambda t,y: Buck.manifold_grad(self, t*self.variational_T, y), \
-                                lambda t,y: Buck.clock_grad(self, t*self.variational_T, y)]
+        self.event_functions = [lambda t,y: Buck.manifold(self, t*self.variational_T, y)]
+        self.event_functions[0].terminal = 1
+        self.event_derivatives = [lambda t,y: Buck.manifold_der(self, t*self.variational_T, y)]
+        self.event_gradients = [lambda t,y: Buck.manifold_grad(self, t*self.variational_T, y)]
 
 
     def _fun(self, t, y):
@@ -244,19 +237,7 @@ class Buck (SwitchingSystem):
 
 
     def _handle_event(self, event_index, t, y):
-        self.vector_field_index = 1 - event_index
-
-
-    def clock(self, t, y):
-        return np.sin(2*np.pi*self.F*t-self.phi)
-
-
-    def clock_der(self, t, y):
-        return 2 * np.pi * self.F * np.cos(2*np.pi*self.F*t-self.phi)
-
-
-    def clock_grad(self, t, y):
-        return np.array([0 for _ in range(self.n_dim)], ndmin=2).transpose()
+        self.vector_field_index = 1 - self.vector_field_index
 
 
     def manifold(self, t, y):

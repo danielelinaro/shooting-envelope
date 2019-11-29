@@ -17,7 +17,7 @@ pack = lambda t,y: np.concatenate((np.reshape(t,(len(t),1)),y.transpose()),axis=
 progname = os.path.basename(sys.argv[0])
 
 # circuit parameters
-T = 50e-6
+T = 50e-7
 Vref = 10
 kp = 0.1
 ki = 10
@@ -82,7 +82,7 @@ def tran(show_plot=True):
     y0 = tran['y'][:,-1]
 
     print_state(y0, 'Initial condition for transient analysis:')
-    t_span = t0 + np.array([0, 0.02/F0])
+    t_span = t0 + np.array([0, 2/F0])
     start = time.time()
     sol = solve_ivp_switch(ckt, t_span, y0, \
                            method='BDF', jac=ckt.jac, \
