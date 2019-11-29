@@ -32,7 +32,7 @@ def Vin(t, V0=Vin0, dV=dVin, F=F0):
 # simulation parameters
 fun = {'rtol': 1e-6, 'atol': 1e-8}
 env = {'rtol': 1e-2, 'atol': 1e-4, 'max_step': 100, 'vars_to_use': [0,1]}
-var = {'rtol': 1e-2, 'atol': 1e-4}
+var = {'rtol': 1e-1, 'atol': 1e-2}
 
 
 def init(T=T, t_tran=10*T, y0=np.array([12,3,0]), rtol=fun['rtol'], atol=fun['atol']):
@@ -82,7 +82,7 @@ def tran(show_plot=True):
     y0 = tran['y'][:,-1]
 
     print_state(y0, 'Initial condition for transient analysis:')
-    t_span = t0 + np.array([0, 2/F0])
+    t_span = t0 + np.array([0, 0.02/F0])
     start = time.time()
     sol = solve_ivp_switch(ckt, t_span, y0, \
                            method='BDF', jac=ckt.jac, \
@@ -195,7 +195,7 @@ def variational(envelope, show_plot=True):
         env_solver = TrapEnvelope(ckt, [0,T_large], y0, T_guess=None, T=T_small, \
                                   env_rtol=env['rtol'], env_atol=env['atol'], \
                                   max_step=env['max_step'], vars_to_use=env['vars_to_use'], \
-                                  is_variational=True, T_var_guess=None, T_var=None, \
+                                  is_variational=True, T_var_guess=None, T_var=T_small, \
                                   var_rtol=var['rtol'], var_atol=var['atol'], \
                                   solver=solve_ivp_switch, \
                                   rtol=fun['rtol'], atol=fun['atol'], method='BDF')
@@ -216,7 +216,7 @@ def variational(envelope, show_plot=True):
             sign = '-'
         else:
             sign = '+'
-        print('   {:9.2e} {} j {:8.2e}'.format(np.real(w[i]),sign,np.abs(np.imag(w[i]))))
+        print('   {:12.5e} {} j {:11.5e}'.format(np.real(w[i]),sign,np.abs(np.imag(w[i]))))
 
     if envelope:
         full_sol = make_full_envelope_solution(ckt, sol, T_small/T_large)

@@ -15,8 +15,9 @@ __all__ = ['EnvelopeSolver', 'BEEnvelope', 'TrapEnvelope']
 class EnvelopeSolver (object):
 
     SUCCESS = 0
-    DT_TOO_LARGE = 1
-    LTE_TOO_LARGE = 2
+    DT_TOO_LARGE = 1 << 0
+    LTE_TOO_LARGE = 1 << 1
+    LTE_VAR_TOO_LARGE = 1 << 2
 
 
     def __init__(self, system, t_span, y0, T_guess=None, T=None,
@@ -181,9 +182,15 @@ class EnvelopeSolver (object):
                     # otherwise simply move the integration one period forward
                     self._one_period_step()
                     msg = 'DT 1T'
+            elif flag == (EnvelopeSolver.LTE_TOO_LARGE | EnvelopeSolver.LTE_VAR_TOO_LARGE):
+                # the LTE was above threshold: _step has already changed the value of H_new
+                msg = 'LTE + LTE VAR'
             elif flag == EnvelopeSolver.LTE_TOO_LARGE:
                 # the LTE was above threshold: _step has already changed the value of H_new
                 msg = 'LTE'
+            elif flag ==  EnvelopeSolver.LTE_VAR_TOO_LARGE:
+                # the LTE was above threshold: _step has already changed the value of H_new
+                msg = 'LTE VAR'
 
             H = self.H
             if self.H_new < self.T and self.t[-1] < self.t_span[1]:
@@ -193,16 +200,18 @@ class EnvelopeSolver (object):
 
             if self.verbose:
                 t_cur = self.t[-1]
-                if msg != 'LTE':
+                if 'LTE' not in msg:
                     H = np.diff(self.t[-2:])[0]
                 N = round(H/self.T)
                 color_fun = colors.green
-                if msg == 'LTE':
-                    color_fun = colors.red
-                elif msg == 'LTE 1T':
-                    color_fun = colors.yellow
-                elif 'DT' in msg:
+                if 'LTE + LTE VAR' in msg:
                     color_fun = colors.magenta
+                elif 'LTE VAR' in msg:
+                    color_fun = colors.yellow
+                elif 'LTE' in msg:
+                    color_fun = colors.red
+                elif 'DT' in msg:
+                    color_fun = colors.cyan
                 H_str = color_fun('%.3e' % H)
                 N_str = color_fun('%4d' % N)
                 H_new_str = color_fun('%.3e' % self.H_new)
@@ -323,7 +332,13 @@ class EnvelopeSolver (object):
         if np.any(lte > scale) or \
            (self.is_variational and self.compute_variational_LTE and \
             n_periods_var > 1 and np.any(lte_var > scale_var)):
-            return EnvelopeSolver.LTE_TOO_LARGE
+            error = 0
+            if np.any(lte > scale):
+                error |= EnvelopeSolver.LTE_TOO_LARGE
+            if self.is_variational and self.compute_variational_LTE and \
+               n_periods_var > 1 and np.any(lte_var > scale_var):
+                error |= EnvelopeSolver.LTE_VAR_TOO_LARGE
+            return error
 
         self.t_next = t_next
         self.y_next = y_next
@@ -499,7 +514,6 @@ class EnvelopeSolver (object):
             self.system.with_variational = with_variational
             return M, M_var, T_var
 
-        ### CHECK why don't I compute the variational LTE if estimate_T_var is True??
         if self.compute_variational_LTE:
             t_stop = t + max([self.T, self.T_var])
             events_fun = lambda tt,yy: tt - (t + min([self.T, self.T_var]))
@@ -507,13 +521,18 @@ class EnvelopeSolver (object):
             sol = self.solver(self.system, [t,t_stop], y_ext, \
                               events=events_fun, dense_output=True,
                               **solver_kwargs)
-            y_ev = sol['sol'](sol['t_events'][0])
-            if t_stop == t + self.T_var:
+            if self.T == self.T_var:
+                # original and variational systems have the same period
+                M = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
+                M_var = M.copy()
+            elif t_stop == t + self.T_var:
                 # the variational system has a larger period than the original one
+                y_ev = sol['sol'](sol['t_events'][0])
                 M_var = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
                 M = np.reshape(y_ev[n_dim:],(n_dim,n_dim)).copy()
             else:
                 # the variational system has a smaller period than the original one
+                y_ev = sol['sol'](sol['t_events'][0])
                 M = np.reshape(sol['y'][n_dim:,-1],(n_dim,n_dim)).copy()
                 M_var = np.reshape(y_ev[n_dim:],(n_dim,n_dim)).copy()
             self.system.with_variational = with_variational
