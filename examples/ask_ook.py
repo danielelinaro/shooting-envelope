@@ -306,8 +306,9 @@ def shooting(envelope, show_plot=True):
     if envelope:
         ckt.with_variational = True
         full_sol = []
-        for integr in sol['integrations']:
-            full_sol.append(make_full_envelope_solution(ckt, integr, T_small/T_large))
+        for i in range(len(sol['integrations'])):
+            sol['integrations'][i]['full_sol'] = make_full_envelope_solution(ckt, sol['integrations'][i], T_small/T_large)
+            full_sol.append(sol['integrations'][i]['full_sol'])
         dump_data(pkl_file, sol=sol, full_sol=full_sol, \
                   t0=0, y0=y0, elapsed_time=elapsed, sys_pars=fun, \
                   env_pars=env, shoot_tol=shoot_tol, var_pars=var, \

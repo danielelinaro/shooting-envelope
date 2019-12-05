@@ -7,7 +7,7 @@ def set_rc_defaults():
     import matplotlib.pyplot as plt
     plt.rc('font', family='Arial', size=8)
     plt.rc('lines', linewidth=1, color='k')
-    plt.rc('axes', linewidth=1, titlesize='medium', labelsize='medium')
+    plt.rc('axes', linewidth=0.5, titlesize='medium', labelsize='medium')
     plt.rc('xtick', direction='out')
     plt.rc('ytick', direction='out')
     #plt.rc('figure', dpi=300)

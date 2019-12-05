@@ -36,7 +36,7 @@ var = {'rtol': 1e-1, 'atol': 1e-2}
 
 
 def init(T=T, t_tran=10*T, y0=np.array([12,3,0]), rtol=fun['rtol'], atol=fun['atol']):
-    ckt = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0)
+    ckt = Buck(0, T=T, Vin=Vin, Vref=Vref, kp=kp, ki=ki, R=R, clock_phase=0, two_events=True)
     sol = solve_ivp_switch(ckt, [0,t_tran], y0, \
                            method='BDF', jac=ckt.jac, \
                            rtol=fun['rtol'], atol=fun['atol'])
@@ -127,6 +127,62 @@ def tran(show_plot=True):
         ax[2].set_xlabel(r'Time ($\mu$s)')
 
     plt.savefig('buck_tran.pdf')
+
+    if show_plot:
+        plt.show()
+
+
+def tran_paper(show_plot=True):
+    T = 50e-6
+    ckt,tran = init(T, t_tran=100*T)
+    t0 = tran['t'][-1]
+    y0 = tran['y'][:,-1]
+
+    print_state(y0, 'Initial condition for transient analysis:')
+    t_span = np.array([0, 500e-6])
+    start = time.time()
+    sol = solve_ivp_switch(ckt, t_span, y0, \
+                           method='BDF', jac=ckt.jac, \
+                           rtol=fun['rtol'], atol=fun['atol'])
+    elapsed = time.time() - start
+    print('Elapsed time: {:.2f} sec.'.format(elapsed))
+    dump_data('buck_tran.pkl', sol=sol, t0=t0, y0=y0, \
+              elapsed_time=elapsed, sys_pars=fun, t_span=t_span)
+
+    from polimi.utils import set_rc_defaults
+    set_rc_defaults()
+
+    fig = plt.figure(figsize=(3,3))
+    ax = [plt.axes([0.2,0.65,0.7,0.25])]
+    ax.append(plt.axes([0.2,0.35,0.7,0.25]))
+    ax.append(plt.axes([0.2,0.15,0.7,0.15]))
+
+    xlim = (t_span + np.diff(t_span) * 0.025 * np.array([-1,1])) * 1e6
+
+    ax[0].plot(sol['t']*1e6, sol['y'][0], 'k', lw=1)
+    ax[0].set_ylabel(r'$V_C$ (V)')
+    ax[0].set_xlim(xlim)
+    ax[0].set_xticks(np.arange(0,510,100))
+    ax[0].set_xticklabels([])
+
+    ax[1].plot(sol['t']*1e6, sol['y'][1], 'k', lw=1)
+    ax[1].set_ylabel(r'$I_L$ (A)')
+    ax[1].set_xlim(xlim)
+    ax[1].set_xticks(np.arange(0,510,100))
+    ax[1].set_xticklabels([])
+
+    t = np.arange(sol['t'][0], sol['t'][-1], T/1000)
+    ramp = (t % T) / T
+    manifold = kp * (sol['y'][0] - Vref) + ki * sol['y'][2]
+    manifold[manifold < 1e-3] = 1e-3
+    manifold[manifold > 1 - 1e-3] = 1 - 1e-3
+    ax[2].plot(t*1e6, ramp, 'm', lw=1, label=r'$V_{ramp}$')
+    ax[2].plot(sol['t']*1e6, manifold, 'g', lw=1, label='Manifold')
+    ax[2].set_xlabel(r'Time ($\mu$s)')
+    ax[2].set_xlim(xlim)
+    ax[2].set_xticks(np.arange(0,510,100))
+
+    plt.savefig('buck_tran_paper.pdf')
 
     if show_plot:
         plt.show()
@@ -360,6 +416,7 @@ def run_all():
 
 cmds = {
     'tran': tran, \
+    'tran-pub': tran_paper, \
     'envelope': envelope, \
     'variational': lambda: variational(envelope=False), \
     'variational-envelope': lambda: variational(envelope=True), \
@@ -371,6 +428,7 @@ cmds = {
 
 cmd_descriptions = {
     'tran': 'integrate the buck converter', \
+    'tran-pub': 'integrate the buck converter and produce a figure suitable for publication', \
     'envelope': 'compute the envelope of the buck converter', \
     'variational': 'integrate the buck converter and its variational part', \
     'variational-envelope': 'compute the envelope of the buck converter with variational part', \
