@@ -152,10 +152,10 @@ def tran_paper(show_plot=True):
     from polimi.utils import set_rc_defaults
     set_rc_defaults()
 
-    fig = plt.figure(figsize=(3,3))
-    ax = [plt.axes([0.2,0.65,0.7,0.25])]
-    ax.append(plt.axes([0.2,0.35,0.7,0.25]))
-    ax.append(plt.axes([0.2,0.15,0.7,0.15]))
+    fig = plt.figure(figsize=(8.5/2.54,3))
+    ax = [plt.axes([0.175,0.675,0.8,0.3])]
+    ax.append(plt.axes([0.175,0.325,0.8,0.3]))
+    ax.append(plt.axes([0.175,0.125,0.8,0.15]))
 
     xlim = (t_span + np.diff(t_span) * 0.025 * np.array([-1,1])) * 1e6
 
