@@ -56,7 +56,7 @@ def forward_euler(sys, t_span, y0, h):
 
 def backward_euler(sys, t_span, y0, h):
     n_dim = len(y0)
-    t = np.arange(t_span[0],t_span[1],h)
+    t = np.arange(t_span[0],t_span[1]+h/2,h)
     n_steps = len(t)
     y = np.zeros((n_dim,n_steps))
     y[:,0] = y0
