@@ -134,12 +134,12 @@ def tran(show_plot=True):
 
 def tran_paper(show_plot=True):
     T = 50e-6
-    ckt,tran = init(T, t_tran=100*T)
+    ckt,tran = init(T, t_tran=10/F0)
     t0 = tran['t'][-1]
     y0 = tran['y'][:,-1]
 
     print_state(y0, 'Initial condition for transient analysis:')
-    t_span = np.array([0, 500e-6])
+    t_span = np.array([0, 1/F0])
     start = time.time()
     sol = solve_ivp_switch(ckt, t_span, y0, \
                            method='BDF', jac=ckt.jac, \
@@ -152,35 +152,56 @@ def tran_paper(show_plot=True):
     from polimi.utils import set_rc_defaults
     set_rc_defaults()
 
-    fig = plt.figure(figsize=(8.5/2.54,3))
-    ax = [plt.axes([0.175,0.675,0.8,0.3])]
-    ax.append(plt.axes([0.175,0.325,0.8,0.3]))
-    ax.append(plt.axes([0.175,0.125,0.8,0.15]))
+    fig = plt.figure(figsize=(8.5/2.54,4))
+    bottom = 0.1
+    top = 0.05
+    space = 0.05
+    dy = (1 - bottom - top - 3*space) / 7
 
+    ax = [
+        plt.axes([0.175, bottom + 5*dy + 3*space, 0.8, 2*dy]), \
+        plt.axes([0.175, bottom + 3*dy + 2*space, 0.8, 2*dy]), \
+        plt.axes([0.175, bottom + dy + space, 0.8, 2*dy]), \
+        plt.axes([0.175, bottom, 0.8, dy]) \
+    ]
+
+    idx, = np.where( (sol['t'] > t_span[0]) & (sol['t'] < t_span[1]) )
     xlim = (t_span + np.diff(t_span) * 0.025 * np.array([-1,1])) * 1e6
 
-    ax[0].plot(sol['t']*1e6, sol['y'][0], 'k', lw=1)
+    ax[0].plot(sol['t'][idx]*1e6, sol['y'][0,idx], 'k', lw=1)
+    ax[0].plot([0,500,500,0,0], [9.95,9.95,10.15,10.15,9.95], 'r', lw=1)
     ax[0].set_ylabel(r'$V_C$ (V)')
     ax[0].set_xlim(xlim)
-    ax[0].set_xticks(np.arange(0,510,100))
-    ax[0].set_xticklabels([])
+    ax[0].set_xticks(np.arange(0,10100,2000))
 
-    ax[1].plot(sol['t']*1e6, sol['y'][1], 'k', lw=1)
-    ax[1].set_ylabel(r'$I_L$ (A)')
+    t_span = np.array([0, 500e-6])
+    idx, = np.where( (sol['t'] > t_span[0]) & (sol['t'] < t_span[1]) )
+    xlim = (t_span + np.diff(t_span) * 0.025 * np.array([-1,1])) * 1e6
+
+    ax[1].plot(sol['t'][idx]*1e6, sol['y'][0,idx], 'k', lw=1)
+    ax[1].set_ylabel(r'$V_C$ (V)')
     ax[1].set_xlim(xlim)
+    ax[1].set_ylim([9.97, 10.12])
     ax[1].set_xticks(np.arange(0,510,100))
     ax[1].set_xticklabels([])
+    ax[1].set_yticks(np.arange(10,10.12,0.05))
 
-    t = np.arange(sol['t'][0], sol['t'][-1], T/1000)
+    ax[2].plot(sol['t'][idx]*1e6, sol['y'][1,idx], 'k', lw=1)
+    ax[2].set_ylabel(r'$I_L$ (A)')
+    ax[2].set_xlim(xlim)
+    ax[2].set_xticks(np.arange(0,510,100))
+    ax[2].set_xticklabels([])
+
+    t = np.arange(sol['t'][idx[0]], sol['t'][idx[-1]], T/1000)
     ramp = (t % T) / T
     manifold = kp * (sol['y'][0] - Vref) + ki * sol['y'][2]
     manifold[manifold < 1e-3] = 1e-3
     manifold[manifold > 1 - 1e-3] = 1 - 1e-3
-    ax[2].plot(t*1e6, ramp, 'm', lw=1, label=r'$V_{ramp}$')
-    ax[2].plot(sol['t']*1e6, manifold, 'g', lw=1, label='Manifold')
-    ax[2].set_xlabel(r'Time ($\mu$s)')
-    ax[2].set_xlim(xlim)
-    ax[2].set_xticks(np.arange(0,510,100))
+    ax[3].plot(t*1e6, ramp, 'm', lw=1, label=r'$V_{ramp}$')
+    ax[3].plot(sol['t'][idx]*1e6, manifold[idx], 'g', lw=1, label='Manifold')
+    ax[3].set_xlabel(r'Time ($\mu$s)')
+    ax[3].set_xlim(xlim)
+    ax[3].set_xticks(np.arange(0,510,100))
 
     plt.savefig('buck_tran_paper.pdf')
 
